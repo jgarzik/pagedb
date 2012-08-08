@@ -33,9 +33,7 @@ def crcheader(s):
 	
 	return hdr
 
-def writeobj(fd, obj):
-	data = obj.serialize()
-
+def trywrite(fd, data):
 	try:
 		bytes = os.write(fd, data)
 	except OSError:
@@ -43,6 +41,10 @@ def writeobj(fd, obj):
 	if bytes != len(data):
 		return False
 	return True
+
+def writeobj(fd, obj):
+	data = obj.serialize()
+	return trywrite(fd, data)
 
 
 class PDTable(object):
@@ -184,22 +186,24 @@ class MiscRecord(object):
 
 class DataRecord(object):
 	def __init__(self):
+		self.name = LOGR_ID_DATA
 		self.table = None
-		self.txn = None
+		self.txn_id = -1L
 		self.k = ''
 		self.v = ''
 		self.recmask = 0
 
 	def deserialize(self, fd):
 		try:
-			hdr = os.read(fd, 4 * 5)
+			hdr = os.read(fd, 4 * 7)
 		except:
 			return False
-		if len(hdr) != (4 * 5):
+		if len(hdr) != (4 * 7):
 			return False
 		if hdr[:4] != LOGR_ID_DATA:
 			return False
-		namsz, ksz, vsz, recmask = struct.unpack('<IIII', hdr[4:])
+		(namsz, ksz, vsz,
+		 self.recmask, self.txn_id) = struct.unpack('<IIIIQ', hdr[4:])
 
 		try:
 			self.table = os.read(fd, namsz)
@@ -220,8 +224,8 @@ class DataRecord(object):
 	
 	def serialize(self):
 		r = LOGR_ID_DATA
-		r += struct.pack('<IIII', len(self.table), len(self.k),
-				 len(self.v), self.recmask)
+		r += struct.pack('<IIIIQ', len(self.table), len(self.k),
+				 len(self.v), self.recmask, self.txn_id)
 		r += self.table
 		r += self.k
 		r += self.v
@@ -238,8 +242,38 @@ class RecLogger(object):
 		self.dbdir = dbdir
 		self.fd = None
 	
-	def data(self, pdtable, k, v, delete=False):
+	def __del__(self):
+		self.close()
+
+	def open(self):
+		try:
+			self.fd = os.open(self.dbdir + '/log',
+					  os.O_CREAT | os.O_WRONLY |
+					  os.O_APPEND, 0666)
+		except OSError:
+			return False
+
+		return True
+
+	def close(self):
+		if self.fd is None:
+			return
+		try:
+			os.close(self.fd)
+		except:
+			pass
+		self.fd = None
+	
+	def sync(self):
+		try:
+			os.fsync(self.fd)
+		except OSError:
+			return False
+		return True
+
+	def data(self, pdtable, txn, k, v, delete=False):
 		dr = DataRecord()
+		dr.txn_id = txn.id
 		dr.table = pdtable.name
 		dr.k = k
 		if delete:
@@ -266,6 +300,7 @@ class PageTxn(object):
 	def __init__(self, id):
 		self.id = id
 		self.log_cache = {}
+		self.log_del_cache = {}
 
 
 class PageTable(object):
@@ -292,6 +327,7 @@ class PageDb(object):
 		self.readonly = False
 		self.super = None
 		self.log_cache = {}
+		self.log_del_cache = {}
 		self.logger = None
 	
 	def open(self, dbdir, readonly=False):
@@ -310,6 +346,8 @@ class PageDb(object):
 			return False
 
 		self.logger = RecLogger(dbdir)
+		if not self.logger.open():
+			return False
 
 		return True
 
@@ -330,15 +368,14 @@ class PageDb(object):
 		return txn
 	
 	def txn_commit(self, txn):
-		if not self.logger.txn_end(txn, True):
-			return False
-		try:
-			os.fsync(self.fd)
-		except OSError:
+		if (not self.logger.txn_end(txn, True) or
+		    not self.logger.sync()):
 			return False
 
 		for k, v in txn.log_cache.iteritems():
 			self.log_cache[k] = v
+		for k in txn.log_del_cache.iterkeys():
+			self.log_del_cache[k] = True
 
 		return True
 
@@ -348,25 +385,56 @@ class PageDb(object):
 		return True
 
 	def put(self, pdtable, txn, k, v):
-		if not self.logger.data(pdtable, k, v):
+		if not self.logger.data(pdtable, txn, k, v):
 			return False
+
+		try:
+			del txn.log_del_cache[k]
+		except KeyError:
+			pass
+
 		txn.log_cache[k] = v
+
+		return True
+
+	def delete(self, pdtable, txn, k):
+		if not self.exists(pdtable, txn, k):
+			return False
+		if not self.logger.data(pdtable, txn, k, None, True):
+			return False
+
+		try:
+			del txn.log_cache[k]
+		except KeyError:
+			pass
+
+		txn.log_del_cache[k] = True
 		return True
 
 	def get(self, pdtable, txn, k):
+
+		if k in txn.log_del_cache:
+			return None
+		if k in self.log_del_cache:
+			return None
+
 		if k in txn.log_cache:
 			return txn.log_cache[k]
 		if k in self.log_cache:
 			return self.log_cache[k]
+
 		return None
 
-	def delete(self, pdtable, txn, k):
-		pass
-
 	def exists(self, pdtable, txn, k):
+		if k in txn.log_del_cache:
+			return False
+		if k in self.log_del_cache:
+			return False
+
 		if k in txn.log_cache:
 			return True
 		if k in self.log_cache:
 			return True
+
 		return False
 
