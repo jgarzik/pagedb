@@ -51,10 +51,14 @@ class PDTable(object):
 	def __init__(self):
 		self.name = ''
 		self.uuid = uuid.uuid4()
+		self.root = -1
 
 	def deserialize(self, table_k, table_v):
 		if (not isstr(table_k) or
 		    not isinstance(table_v, dict) or
+		    'root' not in table_v or
+		    not isstr(table_v['root']) or
+		    re.search('^[\dA-Fa-f]+$', table_v['root']) is None or
 		    'uuid' not in table_v or
 		    not isstr(table_v['uuid'])):
 			return False
@@ -62,6 +66,8 @@ class PDTable(object):
 		m = re.search('^\w+$', table_k)
 		if m is None:
 			return False
+
+		self.root = long(table_v['root'], 16)
 
 		self.name = table_k
 		try:
@@ -72,7 +78,10 @@ class PDTable(object):
 		return True
 
 	def serialize(self):
-		rv = { 'uuid' : self.uuid.hex }
+		rv = {
+			'uuid' : self.uuid.hex,
+			'root' : hex(self.root),
+		}
 		return (self.name, rv)
 
 
@@ -100,6 +109,7 @@ class PDSuper(object):
 		    not isstr(jv['uuid']) or
 		    'log_idx' not in jv or
 		    not isstr(jv['log_idx']) or
+		    re.search('^[\dA-Fa-f]+$', jv['log_idx']) is None or
 		    'version' not in jv or
 		    not isinstance(jv['version'], int) or
 		    'tables' not in jv or
