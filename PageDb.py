@@ -1,5 +1,4 @@
 
-import PageFile
 import struct
 import zlib
 import json
@@ -8,16 +7,39 @@ import os
 import uuid
 
 
+def isstr(s):
+	if isinstance(s, str) or isinstance(s, unicode):
+		return True
+	return False
+
+
 class PDTable(object):
 	def __init__(self):
 		self.name = ''
 		self.uuid = uuid.uuid4()
 
+	def deserialize(self, table_k, table_v):
+		if (not isstr(table_k) or
+		    not isinstance(table_v, dict) or
+		    'uuid' not in table_v or
+		    not isstr(table_v['uuid'])):
+			return False
 
-def isstr(s):
-	if isinstance(s, str) or isinstance(s, unicode):
+		m = re.search('^\w+$', table_k)
+		if m is None:
+			return False
+
+		self.name = table_k
+		try:
+			self.uuid = uuid.UUID(table_v['uuid'])
+		except ValueError:
+			return False
+
 		return True
-	return False
+
+	def serialize(self):
+		rv = { 'uuid' : self.uuid.hex }
+		return (self.name, rv)
 
 
 class PDSuper(object):
@@ -68,22 +90,11 @@ class PDSuper(object):
 			return False
 
 		for table_k, table_v in jv['tables'].iteritems():
-			if (not isinstance(table_v, dict) or
-			    not isstr(table_k) or
-			    'uuid' not in table_v or
-			    not isstr(table_v['uuid'])):
+			pdtable = PDTable()
+			if not pdtable.deserialize(table_k, table_v):
 				return False
 
-			m = re.search('^\w+$', table_k)
-			if m is None:
-				return False
-
-			table = PDTable()
-			table.name = table_k
-			try:
-				table.uuid = uuid.UUID(table_v['uuid'])
-			except ValueError:
-				return False
+			tables[pdtable.name] = pdtable
 
 		return True
 	
@@ -95,7 +106,8 @@ class PDSuper(object):
 		jtables = {}
 
 		for pdtable in self.tables:
-			jtables[pdtable.name] = { 'uuid' : pdtable.uuid.hex }
+			(pd_k, pd_v) = pdtable.serialize()
+			jtables[pd_k] = pd_v
 
 		jv['tables'] = jtables
 
