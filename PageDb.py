@@ -25,7 +25,7 @@ def crcheader(s):
 	hdr = s[:-4]
 
 	crc_str = s[-4:]
-	crc_in = struct.unpack('<I', crc_str)
+	crc_in = struct.unpack('<I', crc_str)[0]
 
 	crc = zlib.crc32(hdr) & 0xffffffff
 	if crc != crc_in:
@@ -33,6 +33,15 @@ def crcheader(s):
 	
 	return hdr
 
+def tryread(fd, n):
+	try:
+		data = os.read(fd, n)
+	except OSError:
+		return None
+	if len(data) != n:
+		return None
+	return data
+		
 def trywrite(fd, data):
 	try:
 		bytes = os.write(fd, data)
@@ -311,6 +320,93 @@ class PageTxn(object):
 		self.id = id
 		self.log_cache = {}
 		self.log_del_cache = {}
+
+
+class TableEnt(object):
+	def __init__(self):
+		self.k = ''
+		self.file_id = -1
+
+	def deserialize(self, fd, crc):
+		data = tryread(fd, 8)
+		if data is None:
+			return None
+		crc = zlib.crc32(data, crc) & 0xffffffff
+
+		self.file_id, klen = struct.unpack('<II', data)
+
+		self.k = tryread(fd, klen)
+		if self.k is None:
+			return None
+		crc = zlib.crc32(self.k, crc) & 0xffffffff
+
+		return crc
+
+	def serialize(self):
+		 r = struct.pack('<II', self.file_id, len(self.k))
+		 r += self.k
+		 return r
+
+
+class TableRoot(object):
+	def __init__(self):
+		self.v = []
+		self.dirty = False
+
+	def deserialize(self, fd):
+		data = tryread(fd, 4)
+		if data != 'ROOT':
+			return False
+
+		crc = 0
+		crc = zlib.crc32(data, crc) & 0xffffffff
+
+		data = tryread(fd, 4)
+		if data is None:
+			return False
+		n_ent = struct.unpack('<I', data)[0]
+		crc = zlib.crc32(data, crc) & 0xffffffff
+
+		for idx in xrange(n_ent):
+			ent = TableEnt()
+			crc = ent.deserialize(fd, crc)
+			if crc is None:
+				return False
+			v.append(ent)
+
+		crc_str = tryread(fd, 4)
+		if crc_str is None:
+			return False
+
+		crc_in = struct.unpack('<I', crc_str)[0]
+		if crc != crc_in:
+			return False
+
+		return True
+
+	def serialize(self, fd):
+		data = 'ROOT'
+		crc = 0
+		crc = zlib.crc32(data, crc) & 0xffffffff
+		if not trywrite(fd, data):
+			return False
+
+		data = struct.pack('<I', len(self.v))
+		crc = zlib.crc32(data, crc) & 0xffffffff
+		if not trywrite(fd, data):
+			return False
+
+		for ent in self.v:
+			data = ent.serialize()
+			crc = zlib.crc32(data, crc) & 0xffffffff
+			if not trywrite(fd, data):
+				return False
+
+		data = struct.pack('<I', crc)
+		if not trywrite(fd, data):
+			return False
+
+		return True
 
 
 class PageTable(object):
