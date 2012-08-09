@@ -4,6 +4,7 @@ import zlib
 import json
 import re
 import os
+import os.path
 import uuid
 
 import TableRoot
@@ -205,7 +206,22 @@ class PageDb(object):
 
 		return True
 
-	def table(self, name):
+	def create(self, dbdir):
+		if not os.path.isdir(dbdir):
+			return False
+
+		self.super = PDSuper()
+		self.super.dirty = True
+
+		self.logger = RecLogger.RecLogger(dbdir)
+		if not self.logger.open():
+			return False
+
+		self.blockmgr = Block.BlockManager(dbdir)
+
+		return True
+
+	def open_table(self, name):
 		try:
 			tablemeta = self.super.tables[name]
 		except KeyError:
@@ -223,6 +239,22 @@ class PageDb(object):
 			tablemeta.root = root
 
 		return PageTable(self, tablemeta)
+
+	def create_table(self, name):
+		m = re.search('^\w+$', name)
+		if m is None:
+			return False
+
+		if name in self.super.tables:
+			return False
+
+		tablemeta = PDTableMeta()
+		tablemeta.name = name
+		
+		self.super.tables[name] = tablemeta
+		self.super.dirty = True
+
+		return True
 
 	def txn_begin(self):
 		txn = PageTxn(self.super.log_idx)
