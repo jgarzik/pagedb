@@ -10,6 +10,9 @@ def isstr(s):
 		return True
 	return False
 
+def updcrc(data, crc):
+	return zlib.crc32(data, crc) & 0xffffffff
+
 def crcheader(s):
 	if len(s) < 4:
 		return None
