@@ -198,7 +198,7 @@ class PageDb(object):
 		if not self.super.deserialize(fdata):
 			return False
 
-		self.logger = RecLogger.RecLogger(dbdir)
+		self.logger = RecLogger.RecLogger(dbdir, self.super.log_idx)
 		if not self.logger.open():
 			return False
 

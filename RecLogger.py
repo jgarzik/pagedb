@@ -93,8 +93,9 @@ class DataRecord(object):
 
 
 class RecLogger(object):
-	def __init__(self, dbdir):
+	def __init__(self, dbdir, log_idx):
 		self.dbdir = dbdir
+		self.log_idx = log_idx
 		self.fd = None
 	
 	def __del__(self):
@@ -102,9 +103,10 @@ class RecLogger(object):
 
 	def open(self):
 		try:
-			self.fd = os.open(self.dbdir + '/log',
-					  os.O_CREAT | os.O_WRONLY |
-					  os.O_APPEND, 0666)
+			name = "/log.%x" % (self.log_idx,)
+			self.fd = os.open(self.dbdir + name,
+					  os.O_CREAT | os.O_RDWR, 0666)
+			os.lseek(self.fd, 0, os.SEEK_END)
 		except OSError:
 			return False
 
