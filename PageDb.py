@@ -56,7 +56,7 @@ def writeobj(fd, obj):
 	return trywrite(fd, data)
 
 
-class PDTable(object):
+class PDTableMeta(object):
 	def __init__(self):
 		self.name = ''
 		self.uuid = uuid.uuid4()
@@ -100,6 +100,7 @@ class PDSuper(object):
 		self.uuid = uuid.uuid4()
 		self.log_idx = 1L
 		self.tables = {}
+		self.dirty = False
 	
 	def deserialize(self, s):
 		data_str = crcheader(s)
@@ -139,11 +140,11 @@ class PDSuper(object):
 			return False
 
 		for table_k, table_v in jv['tables'].iteritems():
-			pdtable = PDTable()
-			if not pdtable.deserialize(table_k, table_v):
+			tablemeta = PDTableMeta()
+			if not tablemeta.deserialize(table_k, table_v):
 				return False
 
-			tables[pdtable.name] = pdtable
+			tables[tablemeta.name] = tablemeta
 
 		return True
 	
@@ -154,8 +155,8 @@ class PDSuper(object):
 
 		jtables = {}
 
-		for pdtable in self.tables:
-			(pd_k, pd_v) = pdtable.serialize()
+		for tablemeta in self.tables:
+			(pd_k, pd_v) = tablemeta.serialize()
 			jtables[pd_k] = pd_v
 
 		jv['tables'] = jtables
@@ -290,10 +291,10 @@ class RecLogger(object):
 			return False
 		return True
 
-	def data(self, pdtable, txn, k, v, delete=False):
+	def data(self, tablemeta, txn, k, v, delete=False):
 		dr = DataRecord()
 		dr.txn_id = txn.id
-		dr.table = pdtable.name
+		dr.table = tablemeta.name
 		dr.k = k
 		if delete:
 			dr.recmask |= LOGR_DELETE
@@ -410,21 +411,21 @@ class TableRoot(object):
 
 
 class PageTable(object):
-	def __init__(self, db, pdtable):
+	def __init__(self, db, tablemeta):
 		self.db = db
-		self.pdtable = pdtable
+		self.tablemeta = tablemeta
 
 	def put(self, txn, k, v):
-		self.db.put(self.pdtable, txn, k, v)
+		self.db.put(self.tablemeta, txn, k, v)
 	
 	def get(self, txn, k):
-		return self.db.get(self.pdtable, txn, k)
+		return self.db.get(self.tablemeta, txn, k)
 		
 	def delete(self, txn, k):
-		return self.db.delete(self.pdtable, txn, k)
+		return self.db.delete(self.tablemeta, txn, k)
 		
 	def exists(self, txn, k):
-		return self.db.exists(self.pdtable, txn, k)
+		return self.db.exists(self.tablemeta, txn, k)
 		
 
 class PageDb(object):
@@ -459,11 +460,11 @@ class PageDb(object):
 
 	def table(self, name):
 		try:
-			pdtable = self.super.tables[name]
+			tablemeta = self.super.tables[name]
 		except KeyError:
 			return None
 
-		return PageTable(self, pdtable)
+		return PageTable(self, tablemeta)
 
 	def txn_begin(self):
 		txn = PageTxn(self.super.log_idx)
@@ -490,8 +491,8 @@ class PageDb(object):
 			return False
 		return True
 
-	def put(self, pdtable, txn, k, v):
-		if not self.logger.data(pdtable, txn, k, v):
+	def put(self, tablemeta, txn, k, v):
+		if not self.logger.data(tablemeta, txn, k, v):
 			return False
 
 		try:
@@ -503,10 +504,10 @@ class PageDb(object):
 
 		return True
 
-	def delete(self, pdtable, txn, k):
-		if not self.exists(pdtable, txn, k):
+	def delete(self, tablemeta, txn, k):
+		if not self.exists(tablemeta, txn, k):
 			return False
-		if not self.logger.data(pdtable, txn, k, None, True):
+		if not self.logger.data(tablemeta, txn, k, None, True):
 			return False
 
 		try:
@@ -517,7 +518,7 @@ class PageDb(object):
 		txn.log_del_cache[k] = True
 		return True
 
-	def get(self, pdtable, txn, k):
+	def get(self, tablemeta, txn, k):
 
 		if k in txn.log_del_cache:
 			return None
@@ -531,7 +532,7 @@ class PageDb(object):
 
 		return None
 
-	def exists(self, pdtable, txn, k):
+	def exists(self, tablemeta, txn, k):
 		if k in txn.log_del_cache:
 			return False
 		if k in self.log_del_cache:
