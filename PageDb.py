@@ -154,16 +154,82 @@ class PageTable(object):
 		self.tablemeta = tablemeta
 
 	def put(self, txn, k, v):
-		self.db.put(self.tablemeta, txn, k, v)
+		if not self.db.logger.data(self.tablemeta, txn, k, v):
+			return False
 
-	def get(self, txn, k):
-		return self.db.get(self.tablemeta, txn, k)
+		try:
+			del txn.log_del_cache[k]
+		except KeyError:
+			pass
+
+		txn.log_cache[k] = v
+
+		return True
 
 	def delete(self, txn, k):
-		return self.db.delete(self.tablemeta, txn, k)
+		if not self.exists(self.tablemeta, txn, k):
+			return False
+		if not self.db.logger.data(self.tablemeta, txn, k, None, True):
+			return False
+
+		try:
+			del txn.log_cache[k]
+		except KeyError:
+			pass
+
+		txn.log_del_cache[k] = True
+		return True
+
+	def get(self, txn, k):
+
+		if k in txn.log_del_cache:
+			return None
+		if k in self.db.log_del_cache:
+			return None
+
+		if k in txn.log_cache:
+			return txn.log_cache[k]
+		if k in self.db.log_cache:
+			return self.log_cache[k]
+
+		ent = self.tablemeta.root.lookup(k)
+		if ent is None:
+			return None
+
+		block = self.db.blockmgr.get(ent.file_id)
+		if block is None:
+			return None
+
+		blkent = block.lookup(k)
+		if blkent is None:
+			return None
+
+		return block.read_value(blkent)
 
 	def exists(self, txn, k):
-		return self.db.exists(self.tablemeta, txn, k)
+		if k in txn.log_del_cache:
+			return False
+		if k in self.db.log_del_cache:
+			return False
+
+		if k in txn.log_cache:
+			return True
+		if k in self.db.log_cache:
+			return True
+
+		ent = self.tablemeta.root.lookup(k)
+		if ent is None:
+			return False
+
+		block = self.db.blockmgr.get(ent.file_id)
+		if block is None:
+			return False
+
+		blkent = block.lookup(k)
+		if blkent is None:
+			return False
+
+		return True
 
 
 class PageDb(object):
@@ -272,83 +338,5 @@ class PageDb(object):
 	def txn_abort(self, txn):
 		if not self.logger.txn_end(txn, False):
 			return False
-		return True
-
-	def put(self, tablemeta, txn, k, v):
-		if not self.logger.data(tablemeta, txn, k, v):
-			return False
-
-		try:
-			del txn.log_del_cache[k]
-		except KeyError:
-			pass
-
-		txn.log_cache[k] = v
-
-		return True
-
-	def delete(self, tablemeta, txn, k):
-		if not self.exists(tablemeta, txn, k):
-			return False
-		if not self.logger.data(tablemeta, txn, k, None, True):
-			return False
-
-		try:
-			del txn.log_cache[k]
-		except KeyError:
-			pass
-
-		txn.log_del_cache[k] = True
-		return True
-
-	def get(self, tablemeta, txn, k):
-
-		if k in txn.log_del_cache:
-			return None
-		if k in self.log_del_cache:
-			return None
-
-		if k in txn.log_cache:
-			return txn.log_cache[k]
-		if k in self.log_cache:
-			return self.log_cache[k]
-
-		ent = tablemeta.root.lookup(k)
-		if ent is None:
-			return None
-
-		block = self.blockmgr.get(ent.file_id)
-		if block is None:
-			return None
-
-		blkent = block.lookup(k)
-		if blkent is None:
-			return None
-
-		return block.read_value(blkent)
-
-	def exists(self, tablemeta, txn, k):
-		if k in txn.log_del_cache:
-			return False
-		if k in self.log_del_cache:
-			return False
-
-		if k in txn.log_cache:
-			return True
-		if k in self.log_cache:
-			return True
-
-		ent = tablemeta.root.lookup(k)
-		if ent is None:
-			return False
-
-		block = self.blockmgr.get(ent.file_id)
-		if block is None:
-			return False
-
-		blkent = block.lookup(k)
-		if blkent is None:
-			return False
-
 		return True
 
