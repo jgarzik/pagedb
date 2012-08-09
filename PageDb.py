@@ -60,14 +60,15 @@ class PDTableMeta(object):
 	def __init__(self):
 		self.name = ''
 		self.uuid = uuid.uuid4()
-		self.root = -1
+		self.root_id = -1
+		self.root = None
 
 	def deserialize(self, table_k, table_v):
 		if (not isstr(table_k) or
 		    not isinstance(table_v, dict) or
-		    'root' not in table_v or
-		    not isstr(table_v['root']) or
-		    re.search('^[\dA-Fa-f]+$', table_v['root']) is None or
+		    'root_id' not in table_v or
+		    not isstr(table_v['root_id']) or
+		    re.search('^[\dA-Fa-f]+$', table_v['root_id']) is None or
 		    'uuid' not in table_v or
 		    not isstr(table_v['uuid'])):
 			return False
@@ -76,7 +77,7 @@ class PDTableMeta(object):
 		if m is None:
 			return False
 
-		self.root = long(table_v['root'], 16)
+		self.root_id = long(table_v['root_id'], 16)
 
 		self.name = table_k
 		try:
@@ -89,7 +90,7 @@ class PDTableMeta(object):
 	def serialize(self):
 		rv = {
 			'uuid' : self.uuid.hex,
-			'root' : hex(self.root),
+			'root_id' : hex(self.root_id),
 		}
 		return (self.name, rv)
 
@@ -99,6 +100,7 @@ class PDSuper(object):
 		self.version = 1
 		self.uuid = uuid.uuid4()
 		self.log_idx = 1L
+		self.next_file_id = 1L
 		self.tables = {}
 		self.dirty = False
 	
@@ -120,6 +122,9 @@ class PDSuper(object):
 		    'log_idx' not in jv or
 		    not isstr(jv['log_idx']) or
 		    re.search('^[\dA-Fa-f]+$', jv['log_idx']) is None or
+		    'next_file_id' not in jv or
+		    not isstr(jv['next_file_id']) or
+		    re.search('^[\dA-Fa-f]+$', jv['next_file_id']) is None or
 		    'version' not in jv or
 		    not isinstance(jv['version'], int) or
 		    'tables' not in jv or
@@ -132,6 +137,10 @@ class PDSuper(object):
 
 		self.log_idx = long(jv['log_idx'], 16)
 		if self.log_idx < 1:
+			return False
+
+		self.next_file_id = long(jv['next_file_id'], 16)
+		if self.next_file_id < 1:
 			return False
 
 		try:
@@ -152,6 +161,8 @@ class PDSuper(object):
 		jv = {}
 		jv['version'] = self.version
 		jv['uuid'] = self.uuid.hex
+		jv['log_idx'] = hex(self.log_idx)
+		jv['next_file_id'] = hex(self.next_file_id)
 
 		jtables = {}
 
@@ -350,9 +361,25 @@ class TableEnt(object):
 
 
 class TableRoot(object):
-	def __init__(self):
+	def __init__(self, dbdir, root_id):
+		self.dbdir = dbdir
+		self.root_id = root_id
 		self.v = []
 		self.dirty = False
+
+	def open(self):
+		try:
+			name = "%x" % (root_id,)
+			fd = os.open(self.dbdir + '/' + name, os.O_RDONLY)
+		except OSError:
+			self.dirty = True
+			return True
+
+		rc = self.deserialize(fd)
+
+		os.close(fd)
+
+		return rc
 
 	def deserialize(self, fd):
 		data = tryread(fd, 4)
@@ -409,6 +436,46 @@ class TableRoot(object):
 
 		return True
 
+	def first(self):
+		if len(self.v) == 0:
+			return None
+		return self.v[0]
+	
+	def last(self):
+		if len(self.v) == 0:
+			return None
+		return self.v[-1]
+
+	def lookup_pos(self, k):
+		for idx in xrange(len(self.v)):
+			if k <= self.v[idx].k:
+				return idx
+
+		return None
+
+	def lookup(self, k):
+		idx = self.lookup_pos(k)
+		if idx is None:
+			return self.last()
+		return self.v[idx]
+	
+	def delete(self, n):
+		if n >= len(self.v):
+			return False
+
+		del self.v[n]
+		self.dirty = True
+
+		return True
+
+	def insert(self, ent):
+		idx = self.lookup_pos(ent.k)
+		if idx is None:
+			self.v.append(ent)
+		else:
+			self.v.insert(idx, ent)
+		self.dirty = True
+
 
 class PageTable(object):
 	def __init__(self, db, tablemeta):
@@ -428,6 +495,61 @@ class PageTable(object):
 		return self.db.exists(self.tablemeta, txn, k)
 		
 
+class BlockEnt(object):
+	def __init__(self):
+		self.k = ''
+		self.pos = -1
+	
+
+class Block(object):
+	def __init__(self, dbdir, file_id):
+		self.dbdir = dbdir
+		self.fd = None
+		self.file_id = file_id
+
+	def __del__(self):
+		if self.fd is None:
+			return
+		try:
+			os.close(self.fd)
+		except OSError:
+			pass
+
+	def open(self):
+		try:
+			name = "%x" % (self.file_id,)
+			self.fd = os.open(dbdir + '/' + name, os.O_RDONLY)
+		except OSError:
+			return False
+
+		return True
+
+	def lookup(self, k):
+		#FIXME
+		pass
+	
+	def read_value(self, blkent):
+		#FIXME
+		pass
+
+
+class BlockManager(object):
+	def __init__(self, dbdir):
+		self.dbdir = dbdir
+		self.cache = {}
+
+	def get(self, file_id):
+		if file_id in self.cache:
+			return self.cache[file_id]
+
+		block = Block(self.dbdir, file_id)
+		if not block.open():
+			return None
+
+		self.cache[file_id] = block
+
+		return block
+
 class PageDb(object):
 	def __init__(self):
 		self.dbdir = None
@@ -436,6 +558,7 @@ class PageDb(object):
 		self.log_cache = {}
 		self.log_del_cache = {}
 		self.logger = None
+		self.blockmgr = None
 	
 	def open(self, dbdir, readonly=False):
 		self.dbdir = dbdir
@@ -456,6 +579,8 @@ class PageDb(object):
 		if not self.logger.open():
 			return False
 
+		self.blockmgr = BlockManager(dbdir)
+
 		return True
 
 	def table(self, name):
@@ -463,6 +588,17 @@ class PageDb(object):
 			tablemeta = self.super.tables[name]
 		except KeyError:
 			return None
+
+		if tablemeta.root_id < 0:
+			tablemeta.root_id = self.super.next_file_id
+			self.super.next_file_id += 1
+			self.super.dirty = True
+
+		if tablemeta.root is None:
+			root = TableRoot(self.dbdir, tablemeta.root_id)
+			if not root.open():
+				return None
+			tablemeta.root = root
 
 		return PageTable(self, tablemeta)
 
@@ -530,7 +666,19 @@ class PageDb(object):
 		if k in self.log_cache:
 			return self.log_cache[k]
 
-		return None
+		ent = tablemeta.root.lookup(k)
+		if ent is None:
+			return None
+
+		block = self.blockmgr.get(ent.file_id)
+		if block is None:
+			return None
+
+		blkent = block.lookup(k)
+		if blkent is None:
+			return None
+
+		return block.read_value(blkent)
 
 	def exists(self, tablemeta, txn, k):
 		if k in txn.log_del_cache:
@@ -543,5 +691,17 @@ class PageDb(object):
 		if k in self.log_cache:
 			return True
 
-		return False
+		ent = tablemeta.root.lookup(k)
+		if ent is None:
+			return False
+
+		block = self.blockmgr.get(ent.file_id)
+		if block is None:
+			return False
+
+		blkent = block.lookup(k)
+		if blkent is None:
+			return False
+
+		return True
 
