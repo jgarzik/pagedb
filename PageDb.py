@@ -182,12 +182,12 @@ class PageTable(object):
 
 	def get(self, txn, k):
 
-		if k in txn.log_del_cache:
+		if txn and k in txn.log_del_cache:
 			return None
 		if k in self.db.log_del_cache:
 			return None
 
-		if k in txn.log_cache:
+		if txn and k in txn.log_cache:
 			return txn.log_cache[k]
 		if k in self.db.log_cache:
 			return self.log_cache[k]
@@ -207,12 +207,12 @@ class PageTable(object):
 		return block.read_value(blkent)
 
 	def exists(self, txn, k):
-		if k in txn.log_del_cache:
+		if txn and k in txn.log_del_cache:
 			return False
 		if k in self.db.log_del_cache:
 			return False
 
-		if k in txn.log_cache:
+		if txn and k in txn.log_cache:
 			return True
 		if k in self.db.log_cache:
 			return True
