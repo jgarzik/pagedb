@@ -24,7 +24,7 @@ def crcheader(s):
 	crc = zlib.crc32(hdr) & 0xffffffff
 	if crc != crc_in:
 		return None
-	
+
 	return hdr
 
 def tryread(fd, n):

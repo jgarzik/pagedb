@@ -36,7 +36,7 @@ class BlockEnt(object):
 		r = struct.pack('<III', len(self.k), self.v_pos, self.v_len)
 		r += self.k
 		return r
-	
+
 
 class Block(object):
 	def __init__(self, dbdir, file_id):
@@ -122,7 +122,7 @@ class Block(object):
 				return None
 
 		return None
-	
+
 	def read_ent(self, blkidx, k):
 		blkent = BlockEnt()
 		blkent.k = k

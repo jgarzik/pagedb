@@ -23,7 +23,7 @@ class MiscRecord(object):
 		data = tryread(fd, 8 + 4)
 		if data is None:
 			return False
-		
+
 		hdr = crcheader(data)
 		if hdr is None:
 			return False
@@ -31,7 +31,7 @@ class MiscRecord(object):
 		self.v = struct.unpack('<Q', hdr)[0]
 
 		return True
-	
+
 	def serialize(self):
 		r = self.name
 		r += struct.pack('<Q', self.v)
@@ -74,7 +74,7 @@ class DataRecord(object):
 			return False
 
 		return True
-	
+
 	def serialize(self):
 		r = LOGR_ID_DATA
 		r += struct.pack('<IIIIQ', len(self.table), len(self.k),
@@ -95,7 +95,7 @@ class RecLogger(object):
 		self.dbdir = dbdir
 		self.log_idx = log_idx
 		self.fd = None
-	
+
 	def __del__(self):
 		self.close()
 
@@ -125,7 +125,7 @@ class RecLogger(object):
 		except:
 			pass
 		self.fd = None
-	
+
 	def sync(self):
 		try:
 			os.fsync(self.fd)
@@ -164,7 +164,7 @@ class RecLogger(object):
 			return False
 
 		return True
-	
+
 	def read(self):
 		hdr = tryread(self.fd, 4)
 		if hdr is None:

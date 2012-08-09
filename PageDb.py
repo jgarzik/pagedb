@@ -61,7 +61,7 @@ class PDSuper(object):
 		self.next_file_id = 1L
 		self.tables = {}
 		self.dirty = False
-	
+
 	def deserialize(self, s):
 		data_str = crcheader(s)
 		if data_str is None:
@@ -114,7 +114,7 @@ class PDSuper(object):
 			tables[tablemeta.name] = tablemeta
 
 		return True
-	
+
 	def serialize(self):
 		jv = {}
 		jv['version'] = self.version
@@ -155,16 +155,16 @@ class PageTable(object):
 
 	def put(self, txn, k, v):
 		self.db.put(self.tablemeta, txn, k, v)
-	
+
 	def get(self, txn, k):
 		return self.db.get(self.tablemeta, txn, k)
-		
+
 	def delete(self, txn, k):
 		return self.db.delete(self.tablemeta, txn, k)
-		
+
 	def exists(self, txn, k):
 		return self.db.exists(self.tablemeta, txn, k)
-		
+
 
 class PageDb(object):
 	def __init__(self):
@@ -175,7 +175,7 @@ class PageDb(object):
 		self.log_del_cache = {}
 		self.logger = None
 		self.blockmgr = None
-	
+
 	def open(self, dbdir, readonly=False):
 		self.dbdir = dbdir
 		self.readonly = readonly
@@ -243,7 +243,7 @@ class PageDb(object):
 
 		tablemeta = PDTableMeta()
 		tablemeta.name = name
-		
+
 		self.super.tables[name] = tablemeta
 		self.super.dirty = True
 
@@ -256,7 +256,7 @@ class PageDb(object):
 		self.super.log_idx += 1
 
 		return txn
-	
+
 	def txn_commit(self, txn):
 		if (not self.logger.txn_end(txn, True) or
 		    not self.logger.sync()):

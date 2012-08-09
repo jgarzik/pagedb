@@ -112,7 +112,7 @@ class TableRoot(object):
 		if len(self.v) == 0:
 			return None
 		return self.v[0]
-	
+
 	def last(self):
 		if len(self.v) == 0:
 			return None
@@ -130,7 +130,7 @@ class TableRoot(object):
 		if idx is None:
 			return self.last()
 		return self.v[idx]
-	
+
 	def delete(self, n):
 		if n >= len(self.v):
 			return False
