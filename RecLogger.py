@@ -4,7 +4,7 @@ import os
 import struct
 import zlib
 
-from util import crcheader, writeobj
+from util import crcheader, writeobj, tryread
 
 
 class MiscRecord(object):
@@ -13,11 +13,8 @@ class MiscRecord(object):
 		self.v = v
 
 	def deserialize(self, fd):
-		try:
-			data = os.read(fd, 4 * 4)
-		except:
-			return False
-		if len(data) != (4 * 4):
+		data = tryread(fd, 4 * 4)
+		if data is None:
 			return False
 		
 		hdr = crcheader(data)
@@ -49,11 +46,8 @@ class DataRecord(object):
 		self.recmask = 0
 
 	def deserialize(self, fd):
-		try:
-			hdr = os.read(fd, 4 * 7)
-		except:
-			return False
-		if len(hdr) != (4 * 7):
+		hdr = tryread(fd, 4 * 7)
+		if hdr is None:
 			return False
 		if hdr[:4] != LOGR_ID_DATA:
 			return False
