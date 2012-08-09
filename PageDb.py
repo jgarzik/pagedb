@@ -13,13 +13,6 @@ import Block
 from util import tryread
 
 
-LOGR_ID_DATA = 'LOGR'
-LOGR_ID_TXN_START = 'TXN '
-LOGR_ID_TXN_COMMIT = 'TXNC'
-LOGR_ID_TXN_ABORT = 'TXNA'
-LOGR_DELETE = (1 << 0)
-
-
 
 class PDTableMeta(object):
 	def __init__(self):

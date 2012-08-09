@@ -7,13 +7,20 @@ import zlib
 from util import crcheader, writeobj, tryread
 
 
+LOGR_ID_DATA = 'LOGR'
+LOGR_ID_TXN_START = 'TXN '
+LOGR_ID_TXN_COMMIT = 'TXNC'
+LOGR_ID_TXN_ABORT = 'TXNA'
+LOGR_DELETE = (1 << 0)
+
+
 class MiscRecord(object):
 	def __init__(self, name=None, v=0L):
 		self.name = name
 		self.v = v
 
 	def deserialize(self, fd):
-		data = tryread(fd, 4 * 4)
+		data = tryread(fd, 8 + 4)
 		if data is None:
 			return False
 		
@@ -21,8 +28,7 @@ class MiscRecord(object):
 		if hdr is None:
 			return False
 
-		self.name = hdr[:4]
-		self.v = struct.unpack('<Q', hdr[4:])[0]
+		self.v = struct.unpack('<Q', hdr)[0]
 
 		return True
 	
@@ -46,13 +52,11 @@ class DataRecord(object):
 		self.recmask = 0
 
 	def deserialize(self, fd):
-		hdr = tryread(fd, 4 * 7)
+		hdr = tryread(fd, 4 * 6)
 		if hdr is None:
 			return False
-		if hdr[:4] != LOGR_ID_DATA:
-			return False
 		(namsz, ksz, vsz,
-		 self.recmask, self.txn_id) = struct.unpack('<IIIIQ', hdr[4:])
+		 self.recmask, self.txn_id) = struct.unpack('<IIIIQ', hdr)
 
 		try:
 			self.table = os.read(fd, namsz)
@@ -100,9 +104,16 @@ class RecLogger(object):
 			name = "/log.%x" % (self.log_idx,)
 			self.fd = os.open(self.dbdir + name,
 					  os.O_CREAT | os.O_RDWR, 0666)
+			st = os.fstat(self.fd)
+			new_log = (st.st_size == 0)
 			os.lseek(self.fd, 0, os.SEEK_END)
 		except OSError:
 			return False
+
+		# initialize log file with header
+		if new_log:
+			if not trywrite(self.fd, 'LOGGER  '):
+				return False
 
 		return True
 
@@ -145,5 +156,33 @@ class RecLogger(object):
 		else:
 			mr = MiscRecord(LOGR_ID_TXN_ABORT, txn.id)
 		return writeobj(self.fd, mr)
+
+	def readreset(self):
+		try:
+			os.lseek(self.fd, 8, os.SEEK_SET)
+		except OSError:
+			return False
+
+		return True
+	
+	def read(self):
+		hdr = tryread(self.fd, 4)
+		if hdr is None:
+			return None
+
+		if hdr == LOGR_ID_DATA:
+			obj = DataRecord()
+
+		elif (hdr == LOGR_ID_TXN_START or
+		      hdr == LOGR_ID_TXN_COMMIT or
+		      hdr == LOGR_ID_TXN_ABORT):
+			obj = MiscRecord()
+
+		else:
+			return None
+
+		if not obj.deserialize(self.fd):
+			return None
+		return obj
 
 
