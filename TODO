@@ -1,0 +1,8 @@
+
+- read logs >= log_idx in at startup
+
+- checkpoint operation to update tables
+
+- instead of one db-wide log cache, create per-block log caches.
+  makes key iteration easier.
+
