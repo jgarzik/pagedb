@@ -7,6 +7,7 @@ import os
 import uuid
 
 import TableRoot
+import RecLogger
 from util import tryread
 
 
@@ -16,38 +17,6 @@ LOGR_ID_TXN_COMMIT = 'TXNC'
 LOGR_ID_TXN_ABORT = 'TXNA'
 LOGR_DELETE = (1 << 0)
 
-
-def isstr(s):
-	if isinstance(s, str) or isinstance(s, unicode):
-		return True
-	return False
-
-def crcheader(s):
-	if len(s) < 4:
-		return None
-	hdr = s[:-4]
-
-	crc_str = s[-4:]
-	crc_in = struct.unpack('<I', crc_str)[0]
-
-	crc = zlib.crc32(hdr) & 0xffffffff
-	if crc != crc_in:
-		return None
-	
-	return hdr
-
-def trywrite(fd, data):
-	try:
-		bytes = os.write(fd, data)
-	except OSError:
-		return False
-	if bytes != len(data):
-		return False
-	return True
-
-def writeobj(fd, obj):
-	data = obj.serialize()
-	return trywrite(fd, data)
 
 
 class PDTableMeta(object):
@@ -177,150 +146,6 @@ class PDSuper(object):
 		return r
 
 
-class MiscRecord(object):
-	def __init__(self, name=None, v=0L):
-		self.name = name
-		self.v = v
-
-	def deserialize(self, fd):
-		try:
-			data = os.read(fd, 4 * 4)
-		except:
-			return False
-		if len(data) != (4 * 4):
-			return False
-		
-		hdr = crcheader(data)
-		if hdr is None:
-			return False
-
-		self.name = hdr[:4]
-		self.v = struct.unpack('<Q', hdr[4:])[0]
-
-		return True
-	
-	def serialize(self):
-		r = self.name
-		r += struct.pack('<Q', self.v)
-
-		crc = zlib.crc32(r) & 0xffffffff
-		r += struct.pack('<I', crc)
-
-		return r
-
-
-class DataRecord(object):
-	def __init__(self):
-		self.name = LOGR_ID_DATA
-		self.table = None
-		self.txn_id = -1L
-		self.k = ''
-		self.v = ''
-		self.recmask = 0
-
-	def deserialize(self, fd):
-		try:
-			hdr = os.read(fd, 4 * 7)
-		except:
-			return False
-		if len(hdr) != (4 * 7):
-			return False
-		if hdr[:4] != LOGR_ID_DATA:
-			return False
-		(namsz, ksz, vsz,
-		 self.recmask, self.txn_id) = struct.unpack('<IIIIQ', hdr[4:])
-
-		try:
-			self.table = os.read(fd, namsz)
-			self.k = os.read(fd, ksz)
-			self.v = os.read(fd, vsz)
-			crcstr = os.read(fd, 4)
-		except:
-			return False
-
-		crc_in = struct.unpack('<I', crcstr)[0]
-
-		recdata = hdr + self.table + self.k + self.v
-		crc = zlib.crc32(recdata) & 0xffffffff
-		if crc != crc_in:
-			return False
-
-		return True
-	
-	def serialize(self):
-		r = LOGR_ID_DATA
-		r += struct.pack('<IIIIQ', len(self.table), len(self.k),
-				 len(self.v), self.recmask, self.txn_id)
-		r += self.table
-		r += self.k
-		r += self.v
-
-		# checksum footer
-		crc = zlib.crc32(r) & 0xffffffff
-		r += struct.pack('<I', crc)
-
-		return r
-
-
-class RecLogger(object):
-	def __init__(self, dbdir):
-		self.dbdir = dbdir
-		self.fd = None
-	
-	def __del__(self):
-		self.close()
-
-	def open(self):
-		try:
-			self.fd = os.open(self.dbdir + '/log',
-					  os.O_CREAT | os.O_WRONLY |
-					  os.O_APPEND, 0666)
-		except OSError:
-			return False
-
-		return True
-
-	def close(self):
-		if self.fd is None:
-			return
-		try:
-			os.close(self.fd)
-		except:
-			pass
-		self.fd = None
-	
-	def sync(self):
-		try:
-			os.fsync(self.fd)
-		except OSError:
-			return False
-		return True
-
-	def data(self, tablemeta, txn, k, v, delete=False):
-		dr = DataRecord()
-		dr.txn_id = txn.id
-		dr.table = tablemeta.name
-		dr.k = k
-		if delete:
-			dr.recmask |= LOGR_DELETE
-			dr.v = ''
-		else:
-			dr.v = v
-
-		return writeobj(self.fd, dr)
-
-	def txn_begin(self, txn):
-		mr = MiscRecord(LOGR_ID_TXN_START, txn.id)
-		return writeobj(self.fd, mr)
-
-	def txn_end(self, txn, commit):
-		if commit:
-			mr = MiscRecord(LOGR_ID_TXN_COMMIT, txn.id)
-		else:
-			mr = MiscRecord(LOGR_ID_TXN_ABORT, txn.id)
-		return writeobj(self.fd, mr)
-
-
 class PageTxn(object):
 	def __init__(self, id):
 		self.id = id
@@ -426,7 +251,7 @@ class PageDb(object):
 		if not self.super.deserialize(fdata):
 			return False
 
-		self.logger = RecLogger(dbdir)
+		self.logger = RecLogger.RecLogger(dbdir)
 		if not self.logger.open():
 			return False
 
