@@ -1,6 +1,8 @@
 #!/usr/bin/python
 
 import sys
+import shutil
+import os
 
 import PageDb
 
@@ -14,6 +16,10 @@ datadict = {
 	'faith' : 'yes',
 }
 
+
+def prep():
+	shutil.rmtree(DBDIR)
+	os.mkdir(DBDIR)
 
 def test1():
 	db = PageDb.PageDb()
@@ -79,6 +85,7 @@ def test2():
 
 	print "test2 OK"
 
+prep()
 test1()
 test2()
 
