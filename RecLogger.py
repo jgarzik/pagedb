@@ -9,6 +9,7 @@
 import os
 import struct
 import zlib
+import google.protobuf
 
 import PDcodec_pb2
 from util import crcheader, writepb, tryread, trywrite, updcrc
@@ -166,7 +167,10 @@ class RecLogger(object):
 		else:
 			return None
 
-		obj.ParseFromString(data)
+		try:
+			obj.ParseFromString(data)
+		except google.protobuf.message.DecodeError: 
+			return None
 
 		return (recname, obj)
 
