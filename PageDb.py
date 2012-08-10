@@ -10,7 +10,7 @@ import uuid
 import TableRoot
 import RecLogger
 import Block
-from util import tryread
+from util import trywrite
 
 
 
@@ -244,15 +244,17 @@ class PageDb(object):
 	def open(self, dbdir):
 		self.dbdir = dbdir
 
+		self.super = PDSuper()
+
 		try:
 			fd = os.open(dbdir + '/super', os.O_RDONLY)
-			fdata = os.read(fd, 16 * 1024 * 1024)
+			map = mmap.mmap(fd, 0, mmap.MAP_SHARED, mmap.PROT_READ)
+			deser_ok = self.super.deserialize(map)
+			map.close()
 			os.close(fd)
+			if not deser_ok:
+				return False
 		except OSError:
-			return False
-
-		self.super = PDSuper()
-		if not self.super.deserialize(fdata):
 			return False
 
 		self.logger = RecLogger.RecLogger(dbdir, self.super.log_idx)
@@ -270,7 +272,18 @@ class PageDb(object):
 		self.dbdir = dbdir
 
 		self.super = PDSuper()
-		self.super.dirty = True
+
+		data = self.super.serialize()
+		try:
+			fd = os.open(dbdir + '/super',
+				     os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0666)
+			ok = trywrite(fd, data)
+			os.fsync(fd)
+			os.close(fd)
+			if not ok:
+				return False
+		except OSError:
+			return False
 
 		self.logger = RecLogger.RecLogger(dbdir, self.super.log_idx)
 		if not self.logger.open():
