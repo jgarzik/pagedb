@@ -40,12 +40,8 @@ class TableRoot(object):
 		self.dirty = False
 
 	def load(self):
-		try:
-			name = "/root.%x" % (self.root_id,)
-			fd = os.open(self.dbdir + name, os.O_RDONLY)
-		except OSError:
-			self.dirty = True	# does not exist, so perform
-			return True		# first-time write
+		name = "/root.%x" % (self.root_id,)
+		fd = os.open(self.dbdir + name, os.O_RDONLY)
 
 		rc = self.deserialize(fd)
 
@@ -54,12 +50,9 @@ class TableRoot(object):
 		return rc
 
 	def dump(self):
-		try:
-			name = "/root.%x" % (self.root_id,)
-			fd = os.open(self.dbdir + name,
-				     os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0666)
-		except OSError:
-			return False
+		name = "/root.%x" % (self.root_id,)
+		fd = os.open(self.dbdir + name,
+			     os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0666)
 
 		rc = self.serialize(fd)
 

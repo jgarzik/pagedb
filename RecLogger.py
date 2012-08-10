@@ -58,13 +58,10 @@ class DataRecord(object):
 		(namsz, ksz, vsz,
 		 self.recmask, self.txn_id) = struct.unpack('<IIIIQ', hdr)
 
-		try:
-			self.table = os.read(fd, namsz)
-			self.k = os.read(fd, ksz)
-			self.v = os.read(fd, vsz)
-			crcstr = os.read(fd, 4)
-		except:
-			return False
+		self.table = os.read(fd, namsz)
+		self.k = os.read(fd, ksz)
+		self.v = os.read(fd, vsz)
+		crcstr = os.read(fd, 4)
 
 		crc_in = struct.unpack('<I', crcstr)[0]
 
@@ -105,11 +102,8 @@ class TableRecord(object):
 		(namsz, self.recmask,
 		 self.root_id, self.txn_id) = struct.unpack('<IIQQ', hdr)
 
-		try:
-			self.tabname = os.read(fd, namsz)
-			crcstr = os.read(fd, 4)
-		except:
-			return False
+		self.tabname = os.read(fd, namsz)
+		crcstr = os.read(fd, 4)
 
 		crc_in = struct.unpack('<I', crcstr)[0]
 
@@ -171,10 +165,7 @@ class RecLogger(object):
 	def close(self):
 		if self.fd is None:
 			return
-		try:
-			os.close(self.fd)
-		except:
-			pass
+		os.close(self.fd)
 		self.fd = None
 
 	def sync(self):
