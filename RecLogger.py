@@ -91,9 +91,9 @@ class DataRecord(object):
 
 
 class RecLogger(object):
-	def __init__(self, dbdir, log_idx):
+	def __init__(self, dbdir, log_id):
 		self.dbdir = dbdir
-		self.log_idx = log_idx
+		self.log_id = log_id
 		self.fd = None
 		self.readonly = False
 
@@ -102,7 +102,7 @@ class RecLogger(object):
 
 	def open(self, readonly=False):
 		try:
-			name = "/log.%x" % (self.log_idx,)
+			name = "/log.%x" % (self.log_id,)
 			if readonly:
 				flags = os.O_RDONLY
 			else:

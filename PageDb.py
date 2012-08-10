@@ -62,7 +62,8 @@ class PDSuper(object):
 	def __init__(self):
 		self.version = 1
 		self.uuid = uuid.uuid4()
-		self.log_idx = 1L
+		self.log_id = -1L
+		self.next_txn_id = 1L
 		self.next_file_id = 1L
 		self.tables = {}
 		self.dirty = False
@@ -82,9 +83,12 @@ class PDSuper(object):
 		if (not isinstance(jv, dict) or
 		    'uuid' not in jv or
 		    not isstr(jv['uuid']) or
-		    'log_idx' not in jv or
-		    not isstr(jv['log_idx']) or
-		    re.search('^[\dA-Fa-f]+$', jv['log_idx']) is None or
+		    'log_id' not in jv or
+		    not isstr(jv['log_id']) or
+		    re.search('^[\dA-Fa-f]+$', jv['log_id']) is None or
+		    'next_txn_id' not in jv or
+		    not isstr(jv['next_txn_id']) or
+		    re.search('^[\dA-Fa-f]+$', jv['next_txn_id']) is None or
 		    'next_file_id' not in jv or
 		    not isstr(jv['next_file_id']) or
 		    re.search('^[\dA-Fa-f]+$', jv['next_file_id']) is None or
@@ -98,12 +102,12 @@ class PDSuper(object):
 		if self.version > 1:
 			return False
 
-		self.log_idx = long(jv['log_idx'], 16)
-		if self.log_idx < 1:
-			return False
-
+		self.log_id = long(jv['log_id'], 16)
+		self.next_txn_id = long(jv['next_txn_id'], 16)
 		self.next_file_id = long(jv['next_file_id'], 16)
-		if self.next_file_id < 1:
+		if (self.log_id < 1 or
+		    self.next_txn_id < 1 or
+		    self.next_file_id < 1):
 			return False
 
 		try:
@@ -124,7 +128,8 @@ class PDSuper(object):
 		jv = {}
 		jv['version'] = self.version
 		jv['uuid'] = self.uuid.hex
-		jv['log_idx'] = hex(self.log_idx)
+		jv['log_id'] = hex(self.log_id)
+		jv['next_txn_id'] = hex(self.next_txn_id)
 		jv['next_file_id'] = hex(self.next_file_id)
 
 		jtables = {}
@@ -266,7 +271,7 @@ class PageDb(object):
 		if not self.read_logs():
 			return False
 
-		self.logger = RecLogger(dbdir, self.super.log_idx)
+		self.logger = RecLogger(dbdir, self.super.log_id)
 		if not self.logger.open():
 			return False
 
@@ -298,18 +303,18 @@ class PageDb(object):
 					return False
 
 	def read_logs(self):
-		log_idx = self.super.log_idx
+		log_id = self.super.log_id
 		while True:
-			logger = RecLogger(self.dbdir, log_idx)
+			logger = RecLogger(self.dbdir, log_id)
 			if not logger.open(True):
-				if log_idx == self.super.log_idx:
+				if log_id == self.super.log_id:
 					return False
 				return True
 			if not logger.readreset():
 				return False
 			if not self.read_log(logger):
 				return False
-			log_idx += 1
+			log_id += 1
 
 	def create(self, dbdir):
 		if not os.path.isdir(dbdir):
@@ -331,7 +336,7 @@ class PageDb(object):
 		except OSError:
 			return False
 
-		self.logger = RecLogger(dbdir, self.super.log_idx)
+		self.logger = RecLogger(dbdir, self.super.log_id)
 		if not self.logger.open():
 			return False
 
@@ -375,10 +380,11 @@ class PageDb(object):
 		return True
 
 	def txn_begin(self):
-		txn = PageTxn(self.super.log_idx)
+		txn = PageTxn(self.super.next_txn_id)
 		if not self.logger.txn_begin(txn):
 			return None
-		self.super.log_idx += 1
+		self.super.next_txn_id += 1
+		self.super.dirty = True
 
 		return txn
 
