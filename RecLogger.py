@@ -11,6 +11,7 @@ LOGR_ID_DATA = 'LOGR'
 LOGR_ID_TXN_START = 'TXN '
 LOGR_ID_TXN_COMMIT = 'TXNC'
 LOGR_ID_TXN_ABORT = 'TXNA'
+LOGR_ID_TABLE = 'LTBL'
 LOGR_DELETE = (1 << 0)
 
 
@@ -33,13 +34,12 @@ class MiscRecord(object):
 		return True
 
 	def serialize(self):
-		r = self.name
-		r += struct.pack('<Q', self.v)
+		r = struct.pack('<Q', self.v)
 
 		crc = zlib.crc32(r) & 0xffffffff
 		r += struct.pack('<I', crc)
 
-		return r
+		return self.name + r
 
 
 class DataRecord(object):
@@ -68,7 +68,7 @@ class DataRecord(object):
 
 		crc_in = struct.unpack('<I', crcstr)[0]
 
-		recdata = hdr + self.table + self.k + self.v
+		recdata = LOGR_ID_DATA + hdr + self.table + self.k + self.v
 		crc = zlib.crc32(recdata) & 0xffffffff
 		if crc != crc_in:
 			return False
@@ -82,6 +82,49 @@ class DataRecord(object):
 		r += self.table
 		r += self.k
 		r += self.v
+
+		# checksum footer
+		crc = zlib.crc32(r) & 0xffffffff
+		r += struct.pack('<I', crc)
+
+		return r
+
+
+class TableRecord(object):
+	def __init__(self):
+		self.name = LOGR_ID_TABLE
+		self.tabname = ''
+		self.recmask = 0
+		self.root_id = 0L
+		self.txn_id = 0L
+
+	def deserialize(self, fd):
+		hdr = tryread(fd, 4+4+8+8)
+		if hdr is None:
+			return False
+		(namsz, self.recmask,
+		 self.root_id, self.txn_id) = struct.unpack('<IIQQ', hdr)
+
+		try:
+			self.tabname = os.read(fd, namsz)
+			crcstr = os.read(fd, 4)
+		except:
+			return False
+
+		crc_in = struct.unpack('<I', crcstr)[0]
+
+		recdata = LOGR_ID_TABLE + hdr + self.tabname
+		crc = zlib.crc32(recdata) & 0xffffffff
+		if crc != crc_in:
+			return False
+
+		return True
+
+	def serialize(self):
+		r = LOGR_ID_TABLE
+		r += struct.pack('<IIQQ', len(self.tabname),
+				 self.recmask, self.root_id, self.txn_id)
+		r += self.tabname
 
 		# checksum footer
 		crc = zlib.crc32(r) & 0xffffffff
@@ -141,6 +184,20 @@ class RecLogger(object):
 			return False
 		return True
 
+	def tableop(self, tablemeta, txn, delete=False):
+		tr = TableRecord()
+		tr.tabname = tablemeta.name
+		if delete:
+			dr.recmask |= LOGR_DELETE
+		tr.root_id = tablemeta.root_id
+		if txn is not None:
+			tr.txn_id = txn.id
+
+		if not writeobj(self.fd, tr):
+			return None
+
+		return tr
+
 	def data(self, tablemeta, txn, k, v, delete=False):
 		dr = DataRecord()
 		dr.txn_id = txn.id
@@ -191,6 +248,9 @@ class RecLogger(object):
 		      hdr == LOGR_ID_TXN_COMMIT or
 		      hdr == LOGR_ID_TXN_ABORT):
 			obj = MiscRecord()
+
+		elif hdr == LOGR_ID_TABLE:
+			obj = TableRecord()
 
 		else:
 			return None

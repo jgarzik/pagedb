@@ -54,7 +54,33 @@ def test1():
 		if not ok:
 			print "key not found for:", k
 
+	print "test1 OK"
+
+def test2():
+	db = PageDb.PageDb()
+	if not db.open(DBDIR):
+		print "open failed"
+		sys.exit(1)
+
+	table = db.open_table(DBTABLE)
+	if table is None:
+		print "open table failed"
+		sys.exit(1)
+
+	for k, v in datadict.iteritems():
+		dbv = table.get(None, k)
+		if v != dbv:
+			print "key mismatch for:", k
+
+	for k in datadict.iterkeys():
+		ok = table.exists(None, k)
+		if not ok:
+			print "key not found for:", k
+
+	print "test2 OK"
+
 test1()
+test2()
 
 sys.exit(0)
 

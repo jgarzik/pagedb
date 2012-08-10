@@ -5,12 +5,13 @@ import json
 import re
 import os
 import os.path
+import mmap
 import uuid
 
 from TableRoot import TableRoot
 import Block
-from RecLogger import RecLogger, LOGR_DELETE
-from util import trywrite
+from RecLogger import RecLogger, LOGR_DELETE, LOGR_ID_DATA, LOGR_ID_TABLE
+from util import trywrite, crcheader, isstr
 
 
 
@@ -128,9 +129,9 @@ class PDSuper(object):
 		jv = {}
 		jv['version'] = self.version
 		jv['uuid'] = self.uuid.hex
-		jv['log_id'] = hex(self.log_id)
-		jv['next_txn_id'] = hex(self.next_txn_id)
-		jv['next_file_id'] = hex(self.next_file_id)
+		jv['log_id'] = "%x" % (self.log_id,)
+		jv['next_txn_id'] = "%x" % (self.next_txn_id,)
+		jv['next_file_id'] = "%x" % (self.next_file_id,)
 
 		jtables = {}
 
@@ -298,6 +299,24 @@ class PageDb(object):
 
 		return True
 
+	def read_logtable(self, obj):
+		# FIXME: unsupported
+		if obj.recmask & LOGR_DELETE:
+			return False
+
+		if obj.tabname in self.super.tables:
+			return False
+
+		tablemeta = PDTableMeta()
+		tablemeta.name = obj.tabname
+		tablemeta.root_id = obj.root_id
+		tablemeta.root = TableRoot(self.dbdir, tablemeta.root_id)
+
+		self.super.tables[obj.tabname] = tablemeta
+		self.super.dirty = True
+
+		return True
+
 	def read_log(self, logger):
 		while True:
 			obj = logger.read()
@@ -306,6 +325,10 @@ class PageDb(object):
 
 			if obj.name == LOGR_ID_DATA:
 				if not self.read_logdata(obj):
+					return False
+
+			elif obj.name == LOGR_ID_TABLE:
+				if not self.read_logtable(obj):
 					return False
 
 	def read_logs(self):
@@ -378,6 +401,9 @@ class PageDb(object):
 		tablemeta.root = TableRoot(self.dbdir, tablemeta.root_id)
 		if not tablemeta.root.dump():
 			return False
+
+		if not self.logger.tableop(tablemeta, None):
+			return None
 
 		self.super.tables[name] = tablemeta
 		self.super.dirty = True
