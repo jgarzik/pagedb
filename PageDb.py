@@ -169,7 +169,7 @@ class PageTxn(object):
 					return None
 				return dr.v
 		return None
-	
+
 	def exists(self, k):
 		for dr in reversed(self.log):
 			if dr.k == k:
