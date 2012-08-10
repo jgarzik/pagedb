@@ -41,7 +41,7 @@ class TableRoot(object):
 
 	def open(self):
 		try:
-			name = "%x" % (root_id,)
+			name = "%x" % (self.root_id,)
 			fd = os.open(self.dbdir + '/' + name, os.O_RDONLY)
 		except OSError:
 			self.dirty = True	# does not exist, so perform

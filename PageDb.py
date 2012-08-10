@@ -190,7 +190,7 @@ class PageTable(object):
 		if txn and k in txn.log_cache:
 			return txn.log_cache[k]
 		if k in self.db.log_cache:
-			return self.log_cache[k]
+			return self.db.log_cache[k]
 
 		ent = self.tablemeta.root.lookup(k)
 		if ent is None:
@@ -235,16 +235,14 @@ class PageTable(object):
 class PageDb(object):
 	def __init__(self):
 		self.dbdir = None
-		self.readonly = False
 		self.super = None
 		self.log_cache = {}
 		self.log_del_cache = {}
 		self.logger = None
 		self.blockmgr = None
 
-	def open(self, dbdir, readonly=False):
+	def open(self, dbdir):
 		self.dbdir = dbdir
-		self.readonly = readonly
 
 		try:
 			fd = os.open(dbdir + '/super', os.O_RDONLY)
@@ -269,10 +267,12 @@ class PageDb(object):
 		if not os.path.isdir(dbdir):
 			return False
 
+		self.dbdir = dbdir
+
 		self.super = PDSuper()
 		self.super.dirty = True
 
-		self.logger = RecLogger.RecLogger(dbdir)
+		self.logger = RecLogger.RecLogger(dbdir, self.super.log_idx)
 		if not self.logger.open():
 			return False
 

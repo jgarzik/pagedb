@@ -4,7 +4,7 @@ import os
 import struct
 import zlib
 
-from util import crcheader, writeobj, tryread
+from util import crcheader, writeobj, tryread, trywrite
 
 
 LOGR_ID_DATA = 'LOGR'
