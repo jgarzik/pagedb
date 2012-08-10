@@ -17,6 +17,7 @@ import uuid
 
 from TableRoot import TableRoot
 import Block
+import PDcodec_pb2
 from RecLogger import RecLogger, LOGR_DELETE, LOGR_ID_DATA, LOGR_ID_TABLE
 from util import trywrite, isstr, readrecstr
 
@@ -86,49 +87,33 @@ class PDSuper(object):
 		if recname != 'PGDB':
 			return False
 
+		obj = PDcodec_pb2.Superblock()
 		try:
-			jv = json.loads(data)
-		except ValueError:
-			return False
+			obj.ParseFromString(data)
+		except google.protobuf.message.DecodeError: 
+			return None
 
-		if (not isinstance(jv, dict) or
-		    'uuid' not in jv or
-		    not isstr(jv['uuid']) or
-		    'log_id' not in jv or
-		    not isstr(jv['log_id']) or
-		    re.search('^[\dA-Fa-f]+$', jv['log_id']) is None or
-		    'next_txn_id' not in jv or
-		    not isstr(jv['next_txn_id']) or
-		    re.search('^[\dA-Fa-f]+$', jv['next_txn_id']) is None or
-		    'next_file_id' not in jv or
-		    not isstr(jv['next_file_id']) or
-		    re.search('^[\dA-Fa-f]+$', jv['next_file_id']) is None or
-		    'version' not in jv or
-		    not isinstance(jv['version'], int) or
-		    'tables' not in jv or
-		    not isinstance(jv['tables'], dict)):
-			return False
-
-		self.version = jv['version']
-		if self.version > 1:
-			return False
-
-		self.log_id = long(jv['log_id'], 16)
-		self.next_txn_id = long(jv['next_txn_id'], 16)
-		self.next_file_id = long(jv['next_file_id'], 16)
+		self.log_id = obj.log_id
+		self.next_txn_id = obj.next_txn_id
+		self.next_file_id = obj.next_file_id
 		if (self.log_id < 1 or
 		    self.next_txn_id < 1 or
 		    self.next_file_id < 1):
 			return False
 
 		try:
-			self.uuid = uuid.UUID(jv['uuid'])
+			self.uuid = uuid.UUID(obj.uuid)
 		except ValueError:
 			return False
 
-		for table_k, table_v in jv['tables'].iteritems():
+		for tm in obj.tables:
 			tablemeta = PDTableMeta()
-			if not tablemeta.deserialize(table_k, table_v):
+			tablemeta.name = tm.name
+			tablemeta.root_id = tm.root_id
+
+			try:
+				tablemeta.uuid = uuid.UUID(tm.uuid)
+			except ValueError:
 				return False
 
 			tables[tablemeta.name] = tablemeta
@@ -136,27 +121,24 @@ class PDSuper(object):
 		return True
 
 	def serialize(self):
-		jv = {}
-		jv['version'] = self.version
-		jv['uuid'] = self.uuid.hex
-		jv['log_id'] = "%x" % (self.log_id,)
-		jv['next_txn_id'] = "%x" % (self.next_txn_id,)
-		jv['next_file_id'] = "%x" % (self.next_file_id,)
-
-		jtables = {}
+		obj = PDcodec_pb2.Superblock()
+		obj.uuid = self.uuid.hex
+		obj.log_id = self.log_id
+		obj.next_txn_id = self.next_txn_id
+		obj.next_file_id = self.next_file_id
 
 		for tablemeta in self.tables:
-			(pd_k, pd_v) = tablemeta.serialize()
-			jtables[pd_k] = pd_v
+			tm = obj.tables.add()
+			tm.name = tablemeta.name
+			tm.uuid = tablemeta.uuid.hex
+			tm.root_id = tablemeta.root_id
 
-		jv['tables'] = jtables
+		data = obj.SerializeToString()
 
-		json_str = json.dumps(jv)
-
-		# magic header, json data
+		# magic header, pb data
 		r = 'PGDB'
-		r += struct.pack('<I', len(json_str))
-		r += json_str
+		r += struct.pack('<I', len(data))
+		r += data
 
 		# checksum footer
 		crc = zlib.crc32(r) & 0xffffffff
