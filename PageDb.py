@@ -257,6 +257,9 @@ class PageDb(object):
 		except OSError:
 			return False
 
+		if not self.read_logs():
+			return False
+
 		self.logger = RecLogger.RecLogger(dbdir, self.super.log_idx)
 		if not self.logger.open():
 			return False
@@ -264,6 +267,32 @@ class PageDb(object):
 		self.blockmgr = Block.BlockManager(dbdir)
 
 		return True
+
+	def read_log(self, logger):
+		while True:
+			obj = logger.read()
+			if obj is None:
+				return True
+
+			if obj.name == LOGR_ID_DATA:
+				if obj.recmask & LOGR_DELETE:
+					self.db.log_del_cache[obj.k] = True
+				else:
+					self.db.log_cache[obj.k] = obj.v
+
+	def read_logs(self):
+		log_idx = self.super.log_idx
+		while True:
+			logger = RecLogger.RecLogger(self.dbdir, log_idx)
+			if not logger.open(True):
+				if log_idx == self.super.log_idx:
+					return False
+				return True
+			if not logger.readreset():
+				return False
+			if not self.read_log(logger):
+				return False
+			log_idx += 1
 
 	def create(self, dbdir):
 		if not os.path.isdir(dbdir):
@@ -336,9 +365,10 @@ class PageDb(object):
 
 		return txn
 
-	def txn_commit(self, txn):
-		if (not self.logger.txn_end(txn, True) or
-		    not self.logger.sync()):
+	def txn_commit(self, txn, sync=True):
+		if not self.logger.txn_end(txn, True):
+			return False
+		if sync and not self.logger.sync():
 			return False
 
 		for k, v in txn.log_cache.iteritems():

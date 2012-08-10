@@ -95,23 +95,31 @@ class RecLogger(object):
 		self.dbdir = dbdir
 		self.log_idx = log_idx
 		self.fd = None
+		self.readonly = False
 
 	def __del__(self):
 		self.close()
 
-	def open(self):
+	def open(self, readonly=False):
 		try:
 			name = "/log.%x" % (self.log_idx,)
-			self.fd = os.open(self.dbdir + name,
-					  os.O_CREAT | os.O_RDWR, 0666)
+			if readonly:
+				flags = os.O_RDONLY
+			else:
+				flags = os.O_CREAT | os.O_RDWR
+			self.fd = os.open(self.dbdir + name, flags, 0666)
 			st = os.fstat(self.fd)
 			new_log = (st.st_size == 0)
 			os.lseek(self.fd, 0, os.SEEK_END)
 		except OSError:
 			return False
 
+		self.readonly = readonly
+
 		# initialize log file with header
 		if new_log:
+			if readonly:
+				return False
 			if not trywrite(self.fd, 'LOGGER  '):
 				return False
 
@@ -159,7 +167,10 @@ class RecLogger(object):
 
 	def readreset(self):
 		try:
-			os.lseek(self.fd, 8, os.SEEK_SET)
+			os.lseek(self.fd, 0, os.SEEK_SET)
+			hdr = tryread(self.fd, 8)
+			if hdr is None or hdr != 'LOGGER  ':
+				return False
 		except OSError:
 			return False
 
