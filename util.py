@@ -93,3 +93,31 @@ def readrec(fd):
 
 	return (recname, data)
 
+def readrecstr(s):
+	if len(s) < 8:
+		return None
+	hdr = s[:8]
+	pos = 8
+
+	recname = hdr[:4]
+	datalen = struct.unpack('<I', hdr[4:])[0]
+
+	if datalen > (16 * 1024 * 1024):
+		return None
+
+	if len(s) < pos + datalen + 4:
+		return None
+	data = s[pos:pos+datalen]
+	pos += datalen
+
+	crc_str = s[pos:pos+4]
+	crc_in = struct.unpack('<I', crc_str)[0]
+
+	crc = updcrc(hdr, 0)
+	crc = updcrc(data, crc)
+
+	if crc != crc_in:
+		return None
+
+	return (recname, data)
+

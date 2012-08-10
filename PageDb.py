@@ -18,7 +18,7 @@ import uuid
 from TableRoot import TableRoot
 import Block
 from RecLogger import RecLogger, LOGR_DELETE, LOGR_ID_DATA, LOGR_ID_TABLE
-from util import trywrite, crcheader, isstr
+from util import trywrite, isstr, readrecstr
 
 
 
@@ -77,14 +77,17 @@ class PDSuper(object):
 		self.dirty = False
 
 	def deserialize(self, s):
-		data_str = crcheader(s)
-		if data_str is None:
+		tup = readrecstr(s)
+		if tup is None:
 			return False
-		if data_str[:6] != 'PAGEDB':
+		recname = tup[0]
+		data = tup[1]
+
+		if recname != 'PGDB':
 			return False
 
 		try:
-			jv = json.loads(data_str[6:])
+			jv = json.loads(data)
 		except ValueError:
 			return False
 
@@ -148,9 +151,12 @@ class PDSuper(object):
 
 		jv['tables'] = jtables
 
+		json_str = json.dumps(jv)
+
 		# magic header, json data
-		r = 'PAGEDB'
-		r += json.dumps(jv)
+		r = 'PGDB'
+		r += struct.pack('<I', len(json_str))
+		r += json_str
 
 		# checksum footer
 		crc = zlib.crc32(r) & 0xffffffff
