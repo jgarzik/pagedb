@@ -68,3 +68,28 @@ def writepb(fd, recname, obj):
 
 	return trywrite(fd, msg)
 
+def readrec(fd):
+	hdr = tryread(fd, 8)
+	if hdr is None:
+		return None
+
+	recname = hdr[:4]
+	datalen = struct.unpack('<I', hdr[4:])[0]
+
+	if datalen > (16 * 1024 * 1024):
+		return None
+
+	data = tryread(fd, datalen)
+	crc_str = tryread(fd, 4)
+	if data is None or crc_str is None:
+		return None
+	crc_in = struct.unpack('<I', crc_str)[0]
+
+	crc = updcrc(hdr, 0)
+	crc = updcrc(data, crc)
+
+	if crc != crc_in:
+		return None
+
+	return (recname, data)
+

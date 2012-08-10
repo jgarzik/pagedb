@@ -12,7 +12,7 @@ import zlib
 import google.protobuf
 
 import PDcodec_pb2
-from util import crcheader, writepb, tryread, trywrite, updcrc
+from util import writepb, tryread, trywrite, readrec
 
 
 LOGR_ID_DATA = 'LOGR'
@@ -131,27 +131,11 @@ class RecLogger(object):
 		return True
 
 	def read(self):
-		hdr = tryread(self.fd, 8)
-		if hdr is None:
+		tup = readrec(self.fd)
+		if tup is None:
 			return None
-
-		recname = hdr[:4]
-		datalen = struct.unpack('<I', hdr[4:])[0]
-
-		if datalen > (16 * 1024 * 1024):
-			return None
-
-		data = tryread(self.fd, datalen)
-		crc_str = tryread(self.fd, 4)
-		if data is None or crc_str is None:
-			return None
-		crc_in = struct.unpack('<I', crc_str)[0]
-
-		crc = updcrc(hdr, 0)
-		crc = updcrc(data, crc)
-
-		if crc != crc_in:
-			return None
+		recname = tup[0]
+		data = tup[1]
 
 		if recname == LOGR_ID_DATA:
 			obj = PDcodec_pb2.LogData()
