@@ -356,11 +356,6 @@ class PageDb(object):
 		except KeyError:
 			return None
 
-		if tablemeta.root_id < 0:
-			tablemeta.root_id = self.super.next_file_id
-			self.super.next_file_id += 1
-			self.super.dirty = True
-
 		if tablemeta.root is None:
 			root = TableRoot(self.dbdir, tablemeta.root_id)
 			if not root.load():
