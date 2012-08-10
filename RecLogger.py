@@ -10,7 +10,8 @@ import os
 import struct
 import zlib
 
-from util import crcheader, writeobj, tryread, trywrite
+import PDcodec_pb2
+from util import crcheader, writepb, tryread, trywrite, updcrc
 
 
 LOGR_ID_DATA = 'LOGR'
@@ -19,118 +20,6 @@ LOGR_ID_TXN_COMMIT = 'TXNC'
 LOGR_ID_TXN_ABORT = 'TXNA'
 LOGR_ID_TABLE = 'LTBL'
 LOGR_DELETE = (1 << 0)
-
-
-class MiscRecord(object):
-	def __init__(self, name=None, v=0L):
-		self.name = name
-		self.v = v
-
-	def deserialize(self, fd):
-		data = tryread(fd, 8 + 4)
-		if data is None:
-			return False
-
-		hdr = crcheader(data)
-		if hdr is None:
-			return False
-
-		self.v = struct.unpack('<Q', hdr)[0]
-
-		return True
-
-	def serialize(self):
-		r = struct.pack('<Q', self.v)
-
-		crc = zlib.crc32(r) & 0xffffffff
-		r += struct.pack('<I', crc)
-
-		return self.name + r
-
-
-class DataRecord(object):
-	def __init__(self):
-		self.name = LOGR_ID_DATA
-		self.table = None
-		self.txn_id = -1L
-		self.k = ''
-		self.v = ''
-		self.recmask = 0
-
-	def deserialize(self, fd):
-		hdr = tryread(fd, 4 * 6)
-		if hdr is None:
-			return False
-		(namsz, ksz, vsz,
-		 self.recmask, self.txn_id) = struct.unpack('<IIIIQ', hdr)
-
-		self.table = os.read(fd, namsz)
-		self.k = os.read(fd, ksz)
-		self.v = os.read(fd, vsz)
-		crcstr = os.read(fd, 4)
-
-		crc_in = struct.unpack('<I', crcstr)[0]
-
-		recdata = LOGR_ID_DATA + hdr + self.table + self.k + self.v
-		crc = zlib.crc32(recdata) & 0xffffffff
-		if crc != crc_in:
-			return False
-
-		return True
-
-	def serialize(self):
-		r = LOGR_ID_DATA
-		r += struct.pack('<IIIIQ', len(self.table), len(self.k),
-				 len(self.v), self.recmask, self.txn_id)
-		r += self.table
-		r += self.k
-		r += self.v
-
-		# checksum footer
-		crc = zlib.crc32(r) & 0xffffffff
-		r += struct.pack('<I', crc)
-
-		return r
-
-
-class TableRecord(object):
-	def __init__(self):
-		self.name = LOGR_ID_TABLE
-		self.tabname = ''
-		self.recmask = 0
-		self.root_id = 0L
-		self.txn_id = 0L
-
-	def deserialize(self, fd):
-		hdr = tryread(fd, 4+4+8+8)
-		if hdr is None:
-			return False
-		(namsz, self.recmask,
-		 self.root_id, self.txn_id) = struct.unpack('<IIQQ', hdr)
-
-		self.tabname = os.read(fd, namsz)
-		crcstr = os.read(fd, 4)
-
-		crc_in = struct.unpack('<I', crcstr)[0]
-
-		recdata = LOGR_ID_TABLE + hdr + self.tabname
-		crc = zlib.crc32(recdata) & 0xffffffff
-		if crc != crc_in:
-			return False
-
-		return True
-
-	def serialize(self):
-		r = LOGR_ID_TABLE
-		r += struct.pack('<IIQQ', len(self.tabname),
-				 self.recmask, self.root_id, self.txn_id)
-		r += self.tabname
-
-		# checksum footer
-		crc = zlib.crc32(r) & 0xffffffff
-		r += struct.pack('<I', crc)
-
-		return r
 
 
 class RecLogger(object):
@@ -182,45 +71,52 @@ class RecLogger(object):
 		return True
 
 	def tableop(self, tablemeta, txn, delete=False):
-		tr = TableRecord()
+		tr = PDcodec_pb2.LogTable()
 		tr.tabname = tablemeta.name
-		if delete:
-			dr.recmask |= LOGR_DELETE
-		tr.root_id = tablemeta.root_id
-		if txn is not None:
+		if txn is None:
+			tr.txn_id = 0
+		else:
 			tr.txn_id = txn.id
+		tr.recmask = 0
+		if delete:
+			tr.recmask |= LOGR_DELETE
+		tr.root_id = tablemeta.root_id
 
-		if not writeobj(self.fd, tr):
+		if not writepb(self.fd, LOGR_ID_TABLE, tr):
 			return None
 
 		return tr
 
 	def data(self, tablemeta, txn, k, v, delete=False):
-		dr = DataRecord()
-		dr.txn_id = txn.id
+		dr = PDcodec_pb2.LogData()
 		dr.table = tablemeta.name
-		dr.k = k
+		dr.txn_id = txn.id
+		dr.recmask = 0
 		if delete:
 			dr.recmask |= LOGR_DELETE
-			dr.v = ''
-		else:
-			dr.v = v
+		dr.key = k
+		if not delete:
+			dr.value = v
 
-		if not writeobj(self.fd, dr):
+		if not writepb(self.fd, LOGR_ID_DATA, dr):
 			return None
 
 		return dr
 
 	def txn_begin(self, txn):
-		mr = MiscRecord(LOGR_ID_TXN_START, txn.id)
-		return writeobj(self.fd, mr)
+		r = PDcodec_pb2.LogTxnOp()
+		r.txn_id = txn.id
+
+		return writepb(self.fd, LOGR_ID_TXN_START, r)
 
 	def txn_end(self, txn, commit):
+		r = PDcodec_pb2.LogTxnOp()
+		r.txn_id = txn.id
 		if commit:
-			mr = MiscRecord(LOGR_ID_TXN_COMMIT, txn.id)
+			op = LOGR_ID_TXN_COMMIT
 		else:
-			mr = MiscRecord(LOGR_ID_TXN_ABORT, txn.id)
-		return writeobj(self.fd, mr)
+			op = LOGR_ID_TXN_ABORT
+		return writepb(self.fd, op, r)
 
 	def readreset(self):
 		try:
@@ -234,26 +130,44 @@ class RecLogger(object):
 		return True
 
 	def read(self):
-		hdr = tryread(self.fd, 4)
+		hdr = tryread(self.fd, 8)
 		if hdr is None:
 			return None
 
-		if hdr == LOGR_ID_DATA:
-			obj = DataRecord()
+		recname = hdr[:4]
+		datalen = struct.unpack('<I', hdr[4:])[0]
 
-		elif (hdr == LOGR_ID_TXN_START or
-		      hdr == LOGR_ID_TXN_COMMIT or
-		      hdr == LOGR_ID_TXN_ABORT):
-			obj = MiscRecord()
+		if datalen > (16 * 1024 * 1024):
+			return None
 
-		elif hdr == LOGR_ID_TABLE:
-			obj = TableRecord()
+		data = tryread(self.fd, datalen)
+		crc_str = tryread(self.fd, 4)
+		if data is None or crc_str is None:
+			return None
+		crc_in = struct.unpack('<I', crc_str)[0]
+
+		crc = updcrc(hdr, 0)
+		crc = updcrc(data, crc)
+
+		if crc != crc_in:
+			return None
+
+		if recname == LOGR_ID_DATA:
+			obj = PDcodec_pb2.LogData()
+
+		elif (recname == LOGR_ID_TXN_START or
+		      recname == LOGR_ID_TXN_COMMIT or
+		      recname == LOGR_ID_TXN_ABORT):
+			obj = PDcodec_pb2.LogTxnOp()
+
+		elif recname == LOGR_ID_TABLE:
+			obj = PDcodec_pb2.LogTable()
 
 		else:
 			return None
 
-		if not obj.deserialize(self.fd):
-			return None
-		return obj
+		obj.ParseFromString(data)
+
+		return (recname, obj)
 
 

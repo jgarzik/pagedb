@@ -1,0 +1,22 @@
+
+package PDcodec;
+
+message LogTxnOp {
+	required uint64 txn_id = 1;
+}
+
+message LogData {
+	required string table = 1;
+	required uint64 txn_id = 2;
+	required uint32 recmask = 3;
+	required string key = 4;
+	optional string value = 5;
+}
+
+message LogTable {
+	required string tabname = 1;
+	required uint64 txn_id = 2;
+	required uint32 recmask = 3;
+	required uint64 root_id = 4;
+}
+

@@ -55,3 +55,16 @@ def writeobj(fd, obj):
 	data = obj.serialize()
 	return trywrite(fd, data)
 
+def writepb(fd, recname, obj):
+	if len(recname) != 4:
+		return False
+	data = obj.SerializeToString()
+	msg = recname + struct.pack('<I', len(data)) + data
+
+	crc = updcrc(msg, 0)
+	crc_str = struct.pack('<I', crc)
+
+	msg += crc_str
+
+	return trywrite(fd, msg)
+

@@ -172,7 +172,7 @@ class PageTxn(object):
 
 	def get(self, k):
 		for dr in reversed(self.log):
-			if dr.k == k:
+			if dr.key == k:
 				if dr.recmask & LOGR_DELETE:
 					return None
 				return dr.v
@@ -180,7 +180,7 @@ class PageTxn(object):
 
 	def exists(self, k):
 		for dr in reversed(self.log):
-			if dr.k == k:
+			if dr.key == k:
 				if dr.recmask & LOGR_DELETE:
 					return False
 				return True
@@ -300,9 +300,9 @@ class PageDb(object):
 			return False
 
 		if obj.recmask & LOGR_DELETE:
-			tablemeta.log_del_cache[obj.k] = True
+			tablemeta.log_del_cache[obj.key] = True
 		else:
-			tablemeta.log_cache[obj.k] = obj.v
+			tablemeta.log_cache[obj.key] = obj.value
 
 		return True
 
@@ -326,15 +326,18 @@ class PageDb(object):
 
 	def read_log(self, logger):
 		while True:
-			obj = logger.read()
-			if obj is None:
+			tup = logger.read()
+			if tup is None:
 				return True
 
-			if obj.name == LOGR_ID_DATA:
+			recname = tup[0]
+			obj = tup[1]
+
+			if recname == LOGR_ID_DATA:
 				if not self.read_logdata(obj):
 					return False
 
-			elif obj.name == LOGR_ID_TABLE:
+			elif recname == LOGR_ID_TABLE:
 				if not self.read_logtable(obj):
 					return False
 
