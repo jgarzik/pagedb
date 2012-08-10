@@ -152,7 +152,10 @@ class RecLogger(object):
 		else:
 			dr.v = v
 
-		return writeobj(self.fd, dr)
+		if not writeobj(self.fd, dr):
+			return None
+
+		return dr
 
 	def txn_begin(self, txn):
 		mr = MiscRecord(LOGR_ID_TXN_START, txn.id)

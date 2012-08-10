@@ -8,18 +8,23 @@ import os.path
 import uuid
 
 import TableRoot
-import RecLogger
 import Block
+from RecLogger import RecLogger, LOGR_DELETE
 from util import trywrite
 
 
 
 class PDTableMeta(object):
 	def __init__(self):
+		# serialized
 		self.name = ''
 		self.uuid = uuid.uuid4()
 		self.root_id = -1
+
+		# only used at runtime
 		self.root = None
+		self.log_cache = {}
+		self.log_del_cache = {}
 
 	def deserialize(self, table_k, table_v):
 		if (not isstr(table_k) or
@@ -144,8 +149,23 @@ class PDSuper(object):
 class PageTxn(object):
 	def __init__(self, id):
 		self.id = id
-		self.log_cache = {}
-		self.log_del_cache = {}
+		self.log = []
+
+	def get(self, k):
+		for dr in reversed(self.log):
+			if dr.k == k:
+				if dr.recmask & LOGR_DELETE:
+					return None
+				return dr.v
+		return None
+	
+	def exists(self, k):
+		for dr in reversed(self.log):
+			if dr.k == k:
+				if dr.recmask & LOGR_DELETE:
+					return False
+				return True
+		return False
 
 
 class PageTable(object):
@@ -154,43 +174,34 @@ class PageTable(object):
 		self.tablemeta = tablemeta
 
 	def put(self, txn, k, v):
-		if not self.db.logger.data(self.tablemeta, txn, k, v):
+		dr = self.db.logger.data(self.tablemeta, txn, k, v)
+		if dr is None:
 			return False
 
-		try:
-			del txn.log_del_cache[k]
-		except KeyError:
-			pass
-
-		txn.log_cache[k] = v
+		txn.log.append(dr)
 
 		return True
 
 	def delete(self, txn, k):
-		if not self.exists(self.tablemeta, txn, k):
-			return False
-		if not self.db.logger.data(self.tablemeta, txn, k, None, True):
+		if not self.exists(txn, k):
 			return False
 
-		try:
-			del txn.log_cache[k]
-		except KeyError:
-			pass
+		dr = self.db.logger.data(self.tablemeta, txn, k, None, True)
+		if dr is None:
+			return False
 
-		txn.log_del_cache[k] = True
+		txn.log.append(dr)
+
 		return True
 
 	def get(self, txn, k):
 
-		if txn and k in txn.log_del_cache:
+		if txn and txn.exists(k):
+			return txn.get(k)
+		if k in self.tablemeta.log_del_cache:
 			return None
-		if k in self.db.log_del_cache:
-			return None
-
-		if txn and k in txn.log_cache:
-			return txn.log_cache[k]
-		if k in self.db.log_cache:
-			return self.db.log_cache[k]
+		if k in self.tablemeta.log_cache:
+			return self.tablemeta.log_cache[k]
 
 		ent = self.tablemeta.root.lookup(k)
 		if ent is None:
@@ -207,14 +218,11 @@ class PageTable(object):
 		return block.read_value(blkent)
 
 	def exists(self, txn, k):
-		if txn and k in txn.log_del_cache:
-			return False
-		if k in self.db.log_del_cache:
-			return False
-
-		if txn and k in txn.log_cache:
+		if txn and txn.exists(k):
 			return True
-		if k in self.db.log_cache:
+		if k in self.tablemeta.log_del_cache:
+			return False
+		if k in self.tablemeta.log_cache:
 			return True
 
 		ent = self.tablemeta.root.lookup(k)
@@ -236,8 +244,6 @@ class PageDb(object):
 	def __init__(self):
 		self.dbdir = None
 		self.super = None
-		self.log_cache = {}
-		self.log_del_cache = {}
 		self.logger = None
 		self.blockmgr = None
 
@@ -260,11 +266,24 @@ class PageDb(object):
 		if not self.read_logs():
 			return False
 
-		self.logger = RecLogger.RecLogger(dbdir, self.super.log_idx)
+		self.logger = RecLogger(dbdir, self.super.log_idx)
 		if not self.logger.open():
 			return False
 
 		self.blockmgr = Block.BlockManager(dbdir)
+
+		return True
+
+	def read_logdata(self, obj):
+		try:
+			tablemeta = self.super.tables[obj.table]
+		except KeyError:
+			return False
+
+		if obj.recmask & LOGR_DELETE:
+			tablemeta.log_del_cache[obj.k] = True
+		else:
+			tablemeta.log_cache[obj.k] = obj.v
 
 		return True
 
@@ -275,15 +294,13 @@ class PageDb(object):
 				return True
 
 			if obj.name == LOGR_ID_DATA:
-				if obj.recmask & LOGR_DELETE:
-					self.db.log_del_cache[obj.k] = True
-				else:
-					self.db.log_cache[obj.k] = obj.v
+				if not self.read_logdata(obj):
+					return False
 
 	def read_logs(self):
 		log_idx = self.super.log_idx
 		while True:
-			logger = RecLogger.RecLogger(self.dbdir, log_idx)
+			logger = RecLogger(self.dbdir, log_idx)
 			if not logger.open(True):
 				if log_idx == self.super.log_idx:
 					return False
@@ -314,7 +331,7 @@ class PageDb(object):
 		except OSError:
 			return False
 
-		self.logger = RecLogger.RecLogger(dbdir, self.super.log_idx)
+		self.logger = RecLogger(dbdir, self.super.log_idx)
 		if not self.logger.open():
 			return False
 
@@ -371,10 +388,9 @@ class PageDb(object):
 		if sync and not self.logger.sync():
 			return False
 
-		for k, v in txn.log_cache.iteritems():
-			self.log_cache[k] = v
-		for k in txn.log_del_cache.iterkeys():
-			self.log_del_cache[k] = True
+		for dr in txn.log:
+			if not self.read_logdata(dr):
+				return False
 
 		return True
 

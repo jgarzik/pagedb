@@ -48,5 +48,10 @@ for k, v in datadict.iteritems():
 	if v != dbv:
 		print "key mismatch for:", k
 
+for k in datadict.iterkeys():
+	ok = table.exists(None, k)
+	if not ok:
+		print "key not found for:", k
+
 sys.exit(0)
 
