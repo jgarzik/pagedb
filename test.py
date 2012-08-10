@@ -1,4 +1,10 @@
 #!/usr/bin/python
+#
+# Copyright 2012 Red Hat, Inc.
+#
+# Distributed under the MIT/X11 software license, see the accompanying
+# file COPYING or http://www.opensource.org/licenses/mit-license.php.
+#
 
 import sys
 import shutil
