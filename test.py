@@ -20,7 +20,13 @@ datadict = {
 	'name' : 'jeff',
 	'age' : '38',
 	'faith' : 'yes',
+	'barnyard' : 'chickens',
+	'goose' : 'egg',
 }
+
+deleted_keys = { 'barnyard', 'goose' }
+
+never_existed = { 'biff129', 'biff122' }
 
 
 def prep():
@@ -66,6 +72,40 @@ def test1():
 		if not ok:
 			print "key not found for:", k
 
+	txn = db.txn_begin()
+	if txn is None:
+		print "txn2 begin failed"
+		sys.exit(1)
+
+	for k in deleted_keys:
+		if not table.delete(txn, k):
+			print "del", k, "failed"
+			sys.exit(1)
+
+	if not db.txn_commit(txn):
+		print "txn2 commit failed"
+		sys.exit(1)
+
+	for k in deleted_keys:
+		dbv = table.get(None, k)
+		if dbv is not None:
+			print "key still get's for:", k
+
+	for k in deleted_keys:
+		ok = table.exists(None, k)
+		if ok:
+			print "key still exists for:", k
+
+	for k in never_existed:
+		dbv = table.get(None, k)
+		if dbv is not None:
+			print "neverexisted key get's for:", k
+
+	for k in never_existed:
+		ok = table.exists(None, k)
+		if ok:
+			print "neverexisted key exists for:", k
+
 	print "test1 OK"
 
 def test2():
@@ -81,13 +121,31 @@ def test2():
 
 	for k, v in datadict.iteritems():
 		dbv = table.get(None, k)
-		if v != dbv:
-			print "key mismatch for:", k
+		if k in deleted_keys:
+			if dbv is not None:
+				print "key still get's for:", k
+		else:
+			if v != dbv:
+				print "key mismatch for:", k
 
 	for k in datadict.iterkeys():
 		ok = table.exists(None, k)
-		if not ok:
-			print "key not found for:", k
+		if k in deleted_keys:
+			if ok:
+				print "key still exists for:", k
+		else:
+			if not ok:
+				print "key not found for:", k
+
+	for k in never_existed:
+		dbv = table.get(None, k)
+		if dbv is not None:
+			print "neverexisted key get's for:", k
+
+	for k in never_existed:
+		ok = table.exists(None, k)
+		if ok:
+			print "neverexisted key exists for:", k
 
 	print "test2 OK"
 
