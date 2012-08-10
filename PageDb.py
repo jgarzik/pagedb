@@ -7,7 +7,7 @@ import os
 import os.path
 import uuid
 
-import TableRoot
+from TableRoot import TableRoot
 import Block
 from RecLogger import RecLogger, LOGR_DELETE
 from util import trywrite
@@ -62,9 +62,9 @@ class PDSuper(object):
 	def __init__(self):
 		self.version = 1
 		self.uuid = uuid.uuid4()
-		self.log_id = -1L
+		self.log_id = 1L
 		self.next_txn_id = 1L
-		self.next_file_id = 1L
+		self.next_file_id = 2L
 		self.tables = {}
 		self.dirty = False
 
@@ -149,6 +149,12 @@ class PDSuper(object):
 		r += struct.pack('<I', crc)
 
 		return r
+
+	def new_fileid(self):
+		rv = self.next_file_id
+		self.next_file_id += 1
+		self.dirty = True
+		return rv
 
 
 class PageTxn(object):
@@ -356,8 +362,8 @@ class PageDb(object):
 			self.super.dirty = True
 
 		if tablemeta.root is None:
-			root = TableRoot.TableRoot(self.dbdir, tablemeta.root_id)
-			if not root.open():
+			root = TableRoot(self.dbdir, tablemeta.root_id)
+			if not root.load():
 				return None
 			tablemeta.root = root
 
@@ -373,6 +379,10 @@ class PageDb(object):
 
 		tablemeta = PDTableMeta()
 		tablemeta.name = name
+		tablemeta.root_id = self.super.new_fileid()
+		tablemeta.root = TableRoot(self.dbdir, tablemeta.root_id)
+		if not tablemeta.root.dump():
+			return False
 
 		self.super.tables[name] = tablemeta
 		self.super.dirty = True

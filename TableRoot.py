@@ -3,7 +3,7 @@ import struct
 import zlib
 import os
 
-from util import tryread
+from util import tryread, trywrite
 
 
 class TableEnt(object):
@@ -39,15 +39,29 @@ class TableRoot(object):
 		self.v = []
 		self.dirty = False
 
-	def open(self):
+	def load(self):
 		try:
-			name = "%x" % (self.root_id,)
-			fd = os.open(self.dbdir + '/' + name, os.O_RDONLY)
+			name = "/root.%x" % (self.root_id,)
+			fd = os.open(self.dbdir + name, os.O_RDONLY)
 		except OSError:
 			self.dirty = True	# does not exist, so perform
 			return True		# first-time write
 
 		rc = self.deserialize(fd)
+
+		os.close(fd)
+
+		return rc
+
+	def dump(self):
+		try:
+			name = "/root.%x" % (self.root_id,)
+			fd = os.open(self.dbdir + name,
+				     os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0666)
+		except OSError:
+			return False
+
+		rc = self.serialize(fd)
 
 		os.close(fd)
 
