@@ -84,6 +84,8 @@ class PDSuper(object):
 			os.unlink(self.dbdir + '/super.tmp')
 			return False
 
+		self.dirty = False
+
 		return True
 
 	def deserialize(self, s):
