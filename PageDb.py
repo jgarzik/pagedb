@@ -37,7 +37,7 @@ class PDTableMeta(object):
 
 
 class PDSuper(object):
-	def __init__(self):
+	def __init__(self, dbdir):
 		self.version = 1
 		self.uuid = uuid.uuid4()
 		self.log_id = 1L
@@ -45,6 +45,46 @@ class PDSuper(object):
 		self.next_file_id = 2L
 		self.tables = {}
 		self.dirty = False
+
+		# only used at runtime
+		self.dbdir = dbdir
+
+	def load(self):
+		try:
+			fd = os.open(self.dbdir + '/super', os.O_RDONLY)
+			map = mmap.mmap(fd, 0, mmap.MAP_SHARED, mmap.PROT_READ)
+			deser_ok = self.deserialize(map)
+			map.close()
+			os.close(fd)
+			if not deser_ok:
+				return False
+		except OSError:
+			return False
+
+		return True
+
+	def dump(self):
+		data = self.serialize()
+		try:
+			fd = os.open(self.dbdir + '/super.tmp',
+				     os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0666)
+			ok = trywrite(fd, data)
+			os.fsync(fd)
+			os.close(fd)
+			if not ok:
+				os.unlink(self.dbdir + '/super.tmp')
+				return False
+		except OSError:
+			return False
+
+		try:
+			os.rename(self.dbdir + '/super.tmp',
+				  self.dbdir + '/super')
+		except OSError:
+			os.unlink(self.dbdir + '/super.tmp')
+			return False
+
+		return True
 
 	def deserialize(self, s):
 		tup = readrecstr(s)
@@ -217,17 +257,8 @@ class PageDb(object):
 	def open(self, dbdir):
 		self.dbdir = dbdir
 
-		self.super = PDSuper()
-
-		try:
-			fd = os.open(dbdir + '/super', os.O_RDONLY)
-			map = mmap.mmap(fd, 0, mmap.MAP_SHARED, mmap.PROT_READ)
-			deser_ok = self.super.deserialize(map)
-			map.close()
-			os.close(fd)
-			if not deser_ok:
-				return False
-		except OSError:
+		self.super = PDSuper(dbdir)
+		if not self.super.load():
 			return False
 
 		if not self.read_logs():
@@ -309,18 +340,8 @@ class PageDb(object):
 
 		self.dbdir = dbdir
 
-		self.super = PDSuper()
-
-		data = self.super.serialize()
-		try:
-			fd = os.open(dbdir + '/super',
-				     os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0666)
-			ok = trywrite(fd, data)
-			os.fsync(fd)
-			os.close(fd)
-			if not ok:
-				return False
-		except OSError:
+		self.super = PDSuper(dbdir)
+		if not self.super.dump():
 			return False
 
 		self.logger = RecLogger(dbdir, self.super.log_id)
