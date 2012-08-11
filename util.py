@@ -19,20 +19,6 @@ def isstr(s):
 def updcrc(data, crc):
 	return zlib.crc32(data, crc) & 0xffffffff
 
-def crcheader(s):
-	if len(s) < 4:
-		return None
-	hdr = s[:-4]
-
-	crc_str = s[-4:]
-	crc_in = struct.unpack('<I', crc_str)[0]
-
-	crc = zlib.crc32(hdr) & 0xffffffff
-	if crc != crc_in:
-		return None
-
-	return hdr
-
 def tryread(fd, n):
 	try:
 		data = os.read(fd, n)
@@ -51,10 +37,6 @@ def trywrite(fd, data):
 		return False
 	return True
 
-def writeobj(fd, obj):
-	data = obj.serialize()
-	return trywrite(fd, data)
-
 def writepb(fd, recname, obj):
 	if len(recname) != 4:
 		return False
@@ -67,6 +49,18 @@ def writepb(fd, recname, obj):
 	msg += crc_str
 
 	return trywrite(fd, msg)
+
+def writerecstr(recname, data):
+	# magic header, pb data
+	r = recname
+	r += struct.pack('<I', len(data))
+	r += data
+
+	# checksum footer
+	crc = zlib.crc32(r) & 0xffffffff
+	r += struct.pack('<I', crc)
+
+	return r
 
 def readrec(fd):
 	hdr = tryread(fd, 8)

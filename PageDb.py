@@ -19,7 +19,7 @@ from TableRoot import TableRoot
 import Block
 import PDcodec_pb2
 from RecLogger import RecLogger, LOGR_DELETE, LOGR_ID_DATA, LOGR_ID_TABLE
-from util import trywrite, isstr, readrecstr
+from util import trywrite, isstr, readrecstr, writerecstr
 
 
 
@@ -133,16 +133,7 @@ class PDSuper(object):
 			tm.uuid = tablemeta.uuid.hex
 			tm.root_id = tablemeta.root_id
 
-		data = obj.SerializeToString()
-
-		# magic header, pb data
-		r = 'PGDB'
-		r += struct.pack('<I', len(data))
-		r += data
-
-		# checksum footer
-		crc = zlib.crc32(r) & 0xffffffff
-		r += struct.pack('<I', crc)
+		r = writerecstr('PGDB', obj.SerializeToString())
 
 		return r
 
