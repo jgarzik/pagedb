@@ -35,37 +35,6 @@ class PDTableMeta(object):
 		self.log_cache = {}
 		self.log_del_cache = {}
 
-	def deserialize(self, table_k, table_v):
-		if (not isstr(table_k) or
-		    not isinstance(table_v, dict) or
-		    'root_id' not in table_v or
-		    not isstr(table_v['root_id']) or
-		    re.search('^[\dA-Fa-f]+$', table_v['root_id']) is None or
-		    'uuid' not in table_v or
-		    not isstr(table_v['uuid'])):
-			return False
-
-		m = re.search('^\w+$', table_k)
-		if m is None:
-			return False
-
-		self.root_id = long(table_v['root_id'], 16)
-
-		self.name = table_k
-		try:
-			self.uuid = uuid.UUID(table_v['uuid'])
-		except ValueError:
-			return False
-
-		return True
-
-	def serialize(self):
-		rv = {
-			'uuid' : self.uuid.hex,
-			'root_id' : hex(self.root_id),
-		}
-		return (self.name, rv)
-
 
 class PDSuper(object):
 	def __init__(self):
