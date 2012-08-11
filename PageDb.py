@@ -31,7 +31,70 @@ class PDTableMeta(object):
 		self.root_id = -1
 
 		# only used at runtime
+		self.super = None
 		self.root = None
+		self.log_cache = {}
+		self.log_del_cache = {}
+
+	def apply_del_cache(self):
+		for k in self.log_del_cache:
+			if k in self.log_cache:
+				del self.log_cache[k]
+
+	def checkpoint_initial(self):
+		self.apply_del_cache()
+
+		keys = sorted(self.log_cache.keys())
+		block = None
+		d = {}
+		d_bytes = 0
+		for key in keys:
+			if block is None:
+				block = Block.Block(self.super.dbdir,
+						    self.super.new_fileid())
+				if not block.create():
+					return False
+
+			d[key] = self.log_cache[key]
+			d_bytes += len(key) + len(d[key])
+
+			if (d_bytes > Block.TARGET_BLK_SZ or
+			    key == keys[-1]):
+				if not block.write_values(d):
+					return False
+				block.close()
+
+				block = None
+				d = {}
+				d_bytes = 0
+
+				rootent = PDcodec_pb2.RootEnt()
+				rootent.key = key
+				rootent.file_id = block.file_id
+
+				self.root.v.append(rootent)
+				self.root.dirty = True
+
+		old_root_id = self.root.root_id
+
+		self.root.root_id = self.super.new_fileid()
+
+		if not self.root.dump():
+			self.root.root_id = old_root_id
+			return False
+
+		self.super.garbage_fileids.append(old_root_id)
+
+		return True
+
+	def checkpoint(self):
+		if len(self.root.v) == 0:
+			return self.checkpoint_initial()
+
+		# FIXME
+		return False
+
+	def checkpoint_flush(self):
 		self.log_cache = {}
 		self.log_del_cache = {}
 
@@ -48,6 +111,7 @@ class PDSuper(object):
 
 		# only used at runtime
 		self.dbdir = dbdir
+		self.garbage_fileids = []
 
 	def load(self):
 		try:
@@ -101,7 +165,7 @@ class PDSuper(object):
 		obj = PDcodec_pb2.Superblock()
 		try:
 			obj.ParseFromString(data)
-		except google.protobuf.message.DecodeError: 
+		except google.protobuf.message.DecodeError:
 			return None
 
 		self.log_id = obj.log_id
@@ -119,6 +183,7 @@ class PDSuper(object):
 
 		for tm in obj.tables:
 			tablemeta = PDTableMeta()
+			tablemeta.super = self
 			tablemeta.name = tm.name
 			tablemeta.root_id = tm.root_id
 
@@ -415,5 +480,20 @@ class PageDb(object):
 	def txn_abort(self, txn):
 		if not self.logger.txn_end(txn, False):
 			return False
+		return True
+
+	def checkpoint(self):
+		for tablemeta in self.super.tables.itervalues():
+			if not tablemeta.checkpoint():
+				return False
+
+		if not self.super.dump():
+			return False
+
+		for tablemeta in self.super.tables.itervalues():
+			tablemeta.checkpoint_flush()
+
+		# TODO: delete super.garbage_fileids
+
 		return True
 

@@ -29,7 +29,11 @@ class TableRoot(object):
 
 		os.close(fd)
 
-		return rc
+		if not rc:
+			return False
+
+		self.dirty = False
+		return True
 
 	def dump(self):
 		name = "/root.%x" % (self.root_id,)
@@ -40,7 +44,11 @@ class TableRoot(object):
 
 		os.close(fd)
 
-		return rc
+		if not rc:
+			return False
+
+		self.dirty = False
+		return True
 
 	def deserialize(self, fd):
 		tup = readrec(fd)

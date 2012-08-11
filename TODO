@@ -6,3 +6,8 @@
 
 - do not overwrite log_idx+1, if multiple logs exist at startup
 
+- correctly cache 
+	put 'foo'
+	del 'foo'
+	put 'foo'
+

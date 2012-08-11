@@ -12,6 +12,7 @@ import mmap
 
 
 MIN_BLK_SZ = 1024
+TARGET_BLK_SZ = 8 * 1024 * 1024
 MAX_BLK_SZ = 16 * 1024 * 1024
 
 
@@ -56,7 +57,7 @@ class Block(object):
 
 	def __del__(self):
 		self.close()
-	
+
 	def close(self):
 		if self.map is not None:
 			try:
