@@ -55,17 +55,22 @@ class Block(object):
 		self.arrpos = -1
 
 	def __del__(self):
+		self.close()
+	
+	def close(self):
 		if self.map is not None:
 			try:
 				self.map.close()
 			except OSError:
 				pass
+			self.map = None
 
 		if self.fd is not None:
 			try:
 				os.close(self.fd)
 			except OSError:
 				pass
+			self.fd = None
 
 	def open(self):
 		# open and mmap file
@@ -90,6 +95,16 @@ class Block(object):
 		self.arrpos, self.n_keys = struct.unpack('<II', trailer)
 
 		if self.st.st_size < (self.arrpos + (self.n_keys * 8)):
+			return False
+
+		return True
+
+	def create(self):
+		try:
+			name = "%x" % (self.file_id,)
+			self.fd = os.open(dbdir + '/' + name,
+					  os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+		except OSError:
 			return False
 
 		return True
