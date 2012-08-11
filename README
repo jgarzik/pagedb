@@ -1,3 +1,11 @@
 
 pagedb is a lightweight key/value database library.
 
+Requirements:
+	Google protocol buffers compiler, protoc
+
+	Python bindings for Google Protocol Buffers
+	http://code.google.com/p/protobuf/
+
+	On Fedora, "yum install protobuf-python"
+
