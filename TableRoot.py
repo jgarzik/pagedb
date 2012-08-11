@@ -54,7 +54,7 @@ class TableRoot(object):
 		rootidx = PDcodec_pb2.RootIdx()
 		try:
 			rootidx.ParseFromString(data)
-		except google.protobuf.message.DecodeError: 
+		except google.protobuf.message.DecodeError:
 			return False
 
 		self.v = []

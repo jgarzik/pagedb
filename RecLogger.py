@@ -153,7 +153,7 @@ class RecLogger(object):
 
 		try:
 			obj.ParseFromString(data)
-		except google.protobuf.message.DecodeError: 
+		except google.protobuf.message.DecodeError:
 			return None
 
 		return (recname, obj)
