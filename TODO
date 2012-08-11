@@ -11,3 +11,4 @@
 	del 'foo'
 	put 'foo'
 
+- Block.write_values() should take sorted list, not dictionary

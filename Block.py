@@ -12,7 +12,8 @@ import mmap
 
 
 MIN_BLK_SZ = 1024
-TARGET_BLK_SZ = 8 * 1024 * 1024
+TARGET_MIN_BLK_SZ = 2 * 1024 * 1024
+TARGET_MAX_BLK_SZ = 8 * 1024 * 1024
 MAX_BLK_SZ = 16 * 1024 * 1024
 
 
@@ -35,9 +36,10 @@ class BlockEnt(object):
 		self.k = ''
 		self.v_pos = -1
 		self.v_len = 0
+		self.k_len = None
 
 	def deserialize_hdr(self, s):
-		(k_len, self.v_pos, self.v_len) = struct.unpack('<III', s)
+		(self.k_len, self.v_pos, self.v_len) = struct.unpack('<III', s)
 
 	def serialize(self):
 		r = struct.pack('<III', len(self.k), self.v_pos, self.v_len)
@@ -145,11 +147,15 @@ class Block(object):
 
 		return None
 
-	def read_ent(self, blkidx, k):
+	def read_ent(self, blkidx, k=None):
 		blkent = BlockEnt()
-		blkent.k = k
 		blkent.deserialize_hdr(self.map[blkidx.entpos :
 						blkidx.entpos + (4 * 3)])
+		if k is None:
+			kpos = blkidx.entpos + (4 * 3)
+			blkent.k = self.map[kpos : kpos + self.k_len]
+		else:
+			blkent.k = k
 		return blkent
 
 	def read_value(self, blkent):
@@ -160,6 +166,19 @@ class Block(object):
 
 		return self.map[spos:epos]
 
+	def readall(self):
+		ret_data = []
+		for idx in xrange(self.n_keys):
+			blkidx = self.getblkidx(idx)
+			blkent = self.read_ent(blkidx)
+			value = self.read_value(blkent)
+
+			tup = (blkent.k, value)
+
+			ret_data.append(tup)
+
+		return ret_data
+
 	def write_values(self, d):
 		keys = sorted(d.keys())
 		ents = []
@@ -168,7 +187,7 @@ class Block(object):
 		# section 1: header
 		magic = 'BLOCK   '
 		if not trywrite(self.fd, magic):
-			return False
+			return None
 		pos = len(magic)
 		crc = updcrc(magic, 0)
 
@@ -180,7 +199,7 @@ class Block(object):
 			blkent.v_len = len(d[key])
 
 			if not trywrite(self.fd, d[key]):
-				return False
+				return None
 
 			pos += blkent.v_len
 			crc = updcrc(d[key], crc)
@@ -196,7 +215,7 @@ class Block(object):
 			data = ent.serialize()
 
 			if not trywrite(self.fd, data):
-				return False
+				return None
 
 			pos += len(data)
 			crc = updcrc(data, crc)
@@ -210,23 +229,23 @@ class Block(object):
 			data = idx.serialize()
 
 			if not trywrite(self.fd, data):
-				return False
+				return None
 
 			crc = updcrc(data, crc)
 
 		# section 5: data trailer
 		data = struct.pack('<II', arrpos, len(keys))
 		if not trywrite(self.fd, data):
-			return False
+			return None
 
 		crc = updcrc(data, crc)
 
 		# section 6: CRC trailer
 		data = struct.pack('<I', crc)
 		if not trywrite(self.fd, data):
-			return False
+			return None
 
-		return True
+		return keys[-1]
 
 
 class BlockManager(object):

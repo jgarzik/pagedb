@@ -22,6 +22,47 @@ from RecLogger import RecLogger, LOGR_DELETE, LOGR_ID_DATA, LOGR_ID_TABLE
 from util import trywrite, isstr, readrecstr, writerecstr
 
 
+class BlockWriter(object):
+	def __init__(self, super):
+		self.super = super
+		self.block = None
+		self.d = {}
+		self.d_bytes = 0
+		self.root_v = []
+
+	def flush(self):
+		if self.block is None:
+			return True
+		last_key = self.block.write_values(self.d)
+		if last_key is None:
+			return False
+		self.block.close()
+
+		self.block = None
+		self.d = {}
+		self.d_bytes = 0
+
+		rootent = PDcodec_pb2.RootEnt()
+		rootent.key = last_key
+		rootent.file_id = self.block.file_id
+
+		self.root_v.append(rootent)
+
+		return True
+
+	def push(self, key, value):
+		if self.block is None:
+			self.block = Block.Block(self.super.dbdir,
+						 self.super.new_fileid())
+			if not self.block.create():
+				return False
+
+		self.d[key] = value
+		self.d_bytes += len(key) + len(value)
+
+		if self.d_bytes > Block.TARGET_MIN_BLK_SZ:
+			return self.flush()
+		return True
 
 class PDTableMeta(object):
 	def __init__(self):
@@ -41,39 +82,9 @@ class PDTableMeta(object):
 			if k in self.log_cache:
 				del self.log_cache[k]
 
-	def checkpoint_initial(self):
-		self.apply_del_cache()
-
-		keys = sorted(self.log_cache.keys())
-		block = None
-		d = {}
-		d_bytes = 0
-		for key in keys:
-			if block is None:
-				block = Block.Block(self.super.dbdir,
-						    self.super.new_fileid())
-				if not block.create():
-					return False
-
-			d[key] = self.log_cache[key]
-			d_bytes += len(key) + len(d[key])
-
-			if (d_bytes > Block.TARGET_BLK_SZ or
-			    key == keys[-1]):
-				if not block.write_values(d):
-					return False
-				block.close()
-
-				block = None
-				d = {}
-				d_bytes = 0
-
-				rootent = PDcodec_pb2.RootEnt()
-				rootent.key = key
-				rootent.file_id = block.file_id
-
-				self.root.v.append(rootent)
-				self.root.dirty = True
+	def flush_rootidx(self):
+		if not self.root.dirty:
+			return True
 
 		old_root_id = self.root.root_id
 
@@ -87,11 +98,108 @@ class PDTableMeta(object):
 
 		return True
 
+	def checkpoint_initial(self):
+		self.apply_del_cache()
+
+		writer = BlockWriter(self.super)
+
+		keys = sorted(self.log_cache.keys())
+		for key in keys:
+			if not writer.push(key, self.log_cache[key]):
+				return False
+		if not writer.flush():
+			return False
+
+		self.root.v = writer.root_v
+		self.root.dirty = True
+
+		if not self.flush_rootidx():
+			return False
+
+		return True
+
+	def checkpoint_block(self, blkent, bkeys):
+		block = Block.Block(self.super.dbdir, blkent.file_id)
+		if not block.open():
+			return None
+		blkvals = block.readall()
+		if blkvals is None:
+			return None
+
+		writer = BlockWriter(self.super)
+		idx_old = 0
+		idx_new = 0
+		while (idx_old < len(blkvals) and
+		       idx_new < len(bkeys)):
+			have_old = idx_old < len(blkvals)
+			have_new = idx_new < len(bkeys)
+			if (have_old and
+			    ((not have_new) or
+			     (blkvals[idx_old][0] <= bkeys[idx_new]))):
+				pk = tup[0]
+				pv = tup[1]
+				idx_old += 1
+			else:
+				pk = bkeys[idx_new]
+				pv = self.log_cache[pk]
+				idx_new += 1
+			if not writer.push(pk, pv):
+				return None
+
+		if not writer.flush():
+			return None
+
+		return writer.root_v
+
 	def checkpoint(self):
 		if len(self.root.v) == 0:
 			return self.checkpoint_initial()
 
-		# FIXME
+		self.apply_del_cache()
+
+		keys = sorted(self.log_cache.keys())
+		keyidx = 0
+		blockidx = 0
+		last_block = len(self.root.v) - 1
+
+		new_root_v = []
+		root_dirty = False
+
+		while blockidx <= last_block:
+			ent = self.root.v[blockidx]
+
+			# accumulate keys belonging to this block
+			bkeys = []
+			while (keyidx < len(keys) and
+			       ((keys[keyidx] <= ent.key) or
+			        (blockidx == last_block))):
+				bkeys.append(keys[keyidx])
+				keyidx += 1
+
+			# update block, or split into multiple blocks
+			if len(bkeys) > 0:
+				entlist = self.checkpoint_block(ent, bkeys)
+				if entlist is None:
+					return False
+
+				if (len(entlist) == 1 and
+				    entlist[0].key == ent.key and
+				    entlist[0].file_id == ent.file_id):
+					new_root_v.append(ent)
+				else:
+					new_root_v.extend(entlist)
+					root_dirty = True
+			else:
+				new_root_v.append(ent)
+
+			blockidx += 1
+
+		if root_dirty:
+			self.root.v = new_root_v
+			self.root.dirty = True
+			if not self.flush_rootidx():
+				return False
+
 		return False
 
 	def checkpoint_flush(self):
