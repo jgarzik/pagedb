@@ -37,14 +37,15 @@ class RecLogger(object):
 		try:
 			name = "/log.%x" % (self.log_id,)
 			if readonly:
-				flags = os.O_RDONLY
+				self.fd = os.open(self.dbdir + name,
+						  os.O_RDONLY)
 			else:
-				flags = os.O_CREAT | os.O_RDWR
-			self.fd = os.open(self.dbdir + name, flags, 0666)
+				self.fd = os.open(self.dbdir + name,
+						  os.O_CREAT | os.O_RDWR, 0666)
 			st = os.fstat(self.fd)
 			new_log = (st.st_size == 0)
 			os.lseek(self.fd, 0, os.SEEK_END)
-		except OSError:
+		except (OSError) as (errno, strerror):
 			return False
 
 		self.readonly = readonly
