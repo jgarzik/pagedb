@@ -33,7 +33,7 @@ class PDTableMeta(object):
 		self.super = None
 		self.root = None
 		self.log_cache = {}
-		self.log_del_cache = {}
+		self.log_del_cache = set()
 
 	def flush_rootidx(self):
 		if not self.root.dirty:
@@ -156,7 +156,7 @@ class PDTableMeta(object):
 
 	def checkpoint_flush(self):
 		self.log_cache = {}
-		self.log_del_cache = {}
+		self.log_del_cache = set()
 
 
 class PDSuper(object):
@@ -406,17 +406,14 @@ class PageDb(object):
 			return False
 
 		if obj.recmask & LOGR_DELETE:
-			tablemeta.log_del_cache[obj.key] = True
+			tablemeta.log_del_cache.add(obj.key)
 			try:
 				del tablemeta.log_cache[obj.key]
 			except KeyError:
 				pass
 		else:
 			tablemeta.log_cache[obj.key] = obj.value
-			try:
-				del tablemeta.log_del_cache[obj.key]
-			except KeyError:
-				pass
+			tablemeta.log_del_cache.discard(obj.key)
 
 		return True
 
