@@ -22,49 +22,6 @@ from RecLogger import RecLogger, LOGR_DELETE, LOGR_ID_DATA, LOGR_ID_TABLE
 from util import trywrite, isstr, readrecstr, writerecstr
 
 
-class BlockWriter(object):
-	def __init__(self, super):
-		self.super = super
-		self.block = None
-		self.recs = []
-		self.rec_bytes = 0
-		self.root_v = []
-
-	def flush(self):
-		if self.block is None:
-			return True
-		last_key = self.block.write_values(self.recs)
-		if last_key is None:
-			return False
-		self.block.close()
-
-		self.block = None
-		self.recs = []
-		self.rec_bytes = 0
-
-		rootent = PDcodec_pb2.RootEnt()
-		rootent.key = last_key
-		rootent.file_id = self.block.file_id
-
-		self.root_v.append(rootent)
-
-		return True
-
-	def push(self, key, value):
-		if self.block is None:
-			self.block = Block.Block(self.super.dbdir,
-						 self.super.new_fileid())
-			if not self.block.create():
-				return False
-
-		tup = (key, value)
-		self.recs.append(tup)
-		self.rec_bytes += len(key) + len(value)
-
-		if self.rec_bytes > Block.TARGET_MIN_BLK_SZ:
-			return self.flush()
-		return True
-
 class PDTableMeta(object):
 	def __init__(self):
 		# serialized
@@ -102,7 +59,7 @@ class PDTableMeta(object):
 	def checkpoint_initial(self):
 		self.apply_del_cache()
 
-		writer = BlockWriter(self.super)
+		writer = Block.BlockWriter(self.super)
 
 		keys = sorted(self.log_cache.keys())
 		for key in keys:
@@ -127,7 +84,9 @@ class PDTableMeta(object):
 		if blkvals is None:
 			return None
 
-		writer = BlockWriter(self.super)
+		# merge old block data (blkvals) and new block data (bkeys)
+		# into a single sorted stream of key/value pairs
+		writer = Block.BlockWriter(self.super)
 		idx_old = 0
 		idx_new = 0
 		while (idx_old < len(blkvals) and

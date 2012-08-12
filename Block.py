@@ -250,6 +250,50 @@ class Block(object):
 		return vals[-1][0]
 
 
+class BlockWriter(object):
+	def __init__(self, super):
+		self.super = super
+		self.block = None
+		self.recs = []
+		self.rec_bytes = 0
+		self.root_v = []
+
+	def flush(self):
+		if self.block is None:
+			return True
+		last_key = self.block.write_values(self.recs)
+		if last_key is None:
+			return False
+		self.block.close()
+
+		self.block = None
+		self.recs = []
+		self.rec_bytes = 0
+
+		rootent = PDcodec_pb2.RootEnt()
+		rootent.key = last_key
+		rootent.file_id = self.block.file_id
+
+		self.root_v.append(rootent)
+
+		return True
+
+	def push(self, key, value):
+		if self.block is None:
+			self.block = Block.Block(self.super.dbdir,
+						 self.super.new_fileid())
+			if not self.block.create():
+				return False
+
+		tup = (key, value)
+		self.recs.append(tup)
+		self.rec_bytes += len(key) + len(value)
+
+		if self.rec_bytes > Block.TARGET_MIN_BLK_SZ:
+			return self.flush()
+		return True
+
+
 class BlockManager(object):
 	def __init__(self, dbdir):
 		self.dbdir = dbdir
