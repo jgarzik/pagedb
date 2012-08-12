@@ -35,11 +35,6 @@ class PDTableMeta(object):
 		self.log_cache = {}
 		self.log_del_cache = {}
 
-	def apply_del_cache(self):
-		for k in self.log_del_cache:
-			if k in self.log_cache:
-				del self.log_cache[k]
-
 	def flush_rootidx(self):
 		if not self.root.dirty:
 			return True
@@ -57,8 +52,6 @@ class PDTableMeta(object):
 		return True
 
 	def checkpoint_initial(self):
-		self.apply_del_cache()
-
 		writer = Block.BlockWriter(self.super)
 
 		keys = sorted(self.log_cache.keys())
@@ -77,6 +70,7 @@ class PDTableMeta(object):
 		return True
 
 	def checkpoint_block(self, blkent, bkeys):
+		# read old block data
 		block = Block.Block(self.super.dbdir, blkent.file_id)
 		if not block.open():
 			return None
@@ -114,8 +108,6 @@ class PDTableMeta(object):
 	def checkpoint(self):
 		if len(self.root.v) == 0:
 			return self.checkpoint_initial()
-
-		self.apply_del_cache()
 
 		keys = sorted(self.log_cache.keys())
 		keyidx = 0
@@ -415,13 +407,21 @@ class PageDb(object):
 
 		if obj.recmask & LOGR_DELETE:
 			tablemeta.log_del_cache[obj.key] = True
+			try:
+				del tablemeta.log_cache[obj.key]
+			except KeyError:
+				pass
 		else:
 			tablemeta.log_cache[obj.key] = obj.value
+			try:
+				del tablemeta.log_del_cache[obj.key]
+			except KeyError:
+				pass
 
 		return True
 
 	def read_logtable(self, obj):
-		# FIXME: unsupported
+		# TODO: logged table deletion unsupported
 		if obj.recmask & LOGR_DELETE:
 			return False
 
