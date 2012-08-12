@@ -179,30 +179,32 @@ class Block(object):
 
 		return ret_data
 
-	def write_values(self, d):
-		keys = sorted(d.keys())
+	def write_values(self, vals):
 		ents = []
 		idxs = []
 
 		# section 1: header
-		magic = 'BLOCK   '
-		if not trywrite(self.fd, magic):
+		hdr = 'BLOCK   '
+		if not trywrite(self.fd, hdr):
 			return None
-		pos = len(magic)
-		crc = updcrc(magic, 0)
+		pos = len(hdr)
+		crc = updcrc(hdr, 0)
 
 		# section 2: write values in sorted order
-		for key in keys:
+		for tup in vals:
+			key = tup[0]
+			val = tup[1]
+
 			blkent = BlockEnt()
 			blkent.k = key
 			blkent.v_pos = pos
-			blkent.v_len = len(d[key])
+			blkent.v_len = len(val)
 
-			if not trywrite(self.fd, d[key]):
+			if not trywrite(self.fd, val):
 				return None
 
 			pos += blkent.v_len
-			crc = updcrc(d[key], crc)
+			crc = updcrc(val, crc)
 
 			ents.append(blkent)
 
@@ -234,7 +236,7 @@ class Block(object):
 			crc = updcrc(data, crc)
 
 		# section 5: data trailer
-		data = struct.pack('<II', arrpos, len(keys))
+		data = struct.pack('<II', arrpos, len(vals))
 		if not trywrite(self.fd, data):
 			return None
 
@@ -245,7 +247,7 @@ class Block(object):
 		if not trywrite(self.fd, data):
 			return None
 
-		return keys[-1]
+		return vals[-1][0]
 
 
 class BlockManager(object):

@@ -26,21 +26,21 @@ class BlockWriter(object):
 	def __init__(self, super):
 		self.super = super
 		self.block = None
-		self.d = {}
-		self.d_bytes = 0
+		self.recs = []
+		self.rec_bytes = 0
 		self.root_v = []
 
 	def flush(self):
 		if self.block is None:
 			return True
-		last_key = self.block.write_values(self.d)
+		last_key = self.block.write_values(self.recs)
 		if last_key is None:
 			return False
 		self.block.close()
 
 		self.block = None
-		self.d = {}
-		self.d_bytes = 0
+		self.recs = []
+		self.rec_bytes = 0
 
 		rootent = PDcodec_pb2.RootEnt()
 		rootent.key = last_key
@@ -57,10 +57,11 @@ class BlockWriter(object):
 			if not self.block.create():
 				return False
 
-		self.d[key] = value
-		self.d_bytes += len(key) + len(value)
+		tup = (key, value)
+		self.recs.append(tup)
+		self.rec_bytes += len(key) + len(value)
 
-		if self.d_bytes > Block.TARGET_MIN_BLK_SZ:
+		if self.rec_bytes > Block.TARGET_MIN_BLK_SZ:
 			return self.flush()
 		return True
 
