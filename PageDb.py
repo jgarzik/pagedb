@@ -69,7 +69,7 @@ class PDTableMeta(object):
 
 		return True
 
-	def checkpoint_block(self, blkent, add_keys):
+	def checkpoint_block(self, blkent, add_recs):
 		# read old block data
 		block = Block.Block(self.super.dbdir, blkent.file_id)
 		if not block.open():
@@ -78,26 +78,24 @@ class PDTableMeta(object):
 		if blkvals is None:
 			return None
 
-		# merge old block data (blkvals) and new block data (add_keys)
+		# merge old block data (blkvals) and new block data (add_recs)
 		# into a single sorted stream of key/value pairs
 		writer = Block.BlockWriter(self.super)
 		idx_old = 0
 		idx_new = 0
 		while (idx_old < len(blkvals) and
-		       idx_new < len(add_keys)):
+		       idx_new < len(add_recs)):
 			have_old = idx_old < len(blkvals)
-			have_new = idx_new < len(add_keys)
+			have_new = idx_new < len(add_recs)
 			if (have_old and
 			    ((not have_new) or
-			     (blkvals[idx_old][0] <= add_keys[idx_new]))):
-				pk = tup[0]
-				pv = tup[1]
+			     (blkvals[idx_old][0] <= add_recs[idx_new][0]))):
+				tup = blkvals[idx_old]
 				idx_old += 1
 			else:
-				pk = add_keys[idx_new]
-				pv = self.log_cache[pk]
+				tup = add_recs[idx_new]
 				idx_new += 1
-			if not writer.push(pk, pv):
+			if not writer.push(tup[0], tup[1]):
 				return None
 
 		if not writer.flush():
@@ -121,16 +119,18 @@ class PDTableMeta(object):
 			ent = self.root.v[blockidx]
 
 			# accumulate keys belonging to this block
-			add_keys = []
+			add_recs = []
 			while (keyidx < len(keys) and
 			       ((keys[keyidx] <= ent.key) or
 			        (blockidx == last_block))):
-				add_keys.append(keys[keyidx])
+				tup = (keys[keyidx],
+				       self.log_cache[keys[keyidx]])
+				add_recs.append(tup)
 				keyidx += 1
 
 			# update block, or split into multiple blocks
-			if len(add_keys) > 0:
-				entlist = self.checkpoint_block(ent, add_keys)
+			if len(add_recs) > 0:
+				entlist = self.checkpoint_block(ent, add_recs)
 				if entlist is None:
 					return False
 
