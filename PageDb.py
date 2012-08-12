@@ -69,7 +69,7 @@ class PDTableMeta(object):
 
 		return True
 
-	def checkpoint_block(self, blkent, add_recs):
+	def checkpoint_block(self, blkent, add_recs, del_recs):
 		# read old block data
 		block = Block.Block(self.super.dbdir, blkent.file_id)
 		if not block.open():
@@ -78,15 +78,18 @@ class PDTableMeta(object):
 		if blkvals is None:
 			return None
 
-		# merge old block data (blkvals) and new block data (add_recs)
+		# merge old block data (blkvals), new block data (add_recs),
+		# and block data deletion notations (del_recs)
 		# into a single sorted stream of key/value pairs
 		writer = Block.BlockWriter(self.super)
 		idx_old = 0
 		idx_new = 0
+		idx_del = 0
 		while (idx_old < len(blkvals) and
 		       idx_new < len(add_recs)):
 			have_old = idx_old < len(blkvals)
 			have_new = idx_new < len(add_recs)
+			have_del = idx_del < len(del_recs)
 			if (have_old and
 			    ((not have_new) or
 			     (blkvals[idx_old][0] <= add_recs[idx_new][0]))):
@@ -95,8 +98,12 @@ class PDTableMeta(object):
 			else:
 				tup = add_recs[idx_new]
 				idx_new += 1
-			if not writer.push(tup[0], tup[1]):
-				return None
+
+			if have_del and (tup[0] == del_recs[idx_del]):
+				idx_del += 1
+			else:
+				if not writer.push(tup[0], tup[1]):
+					return None
 
 		if not writer.flush():
 			return None
@@ -108,7 +115,9 @@ class PDTableMeta(object):
 			return self.checkpoint_initial()
 
 		keys = sorted(self.log_cache.keys())
+		del_keys = sorted(self.log_del_cache)
 		keyidx = 0
+		del_keyidx = 0
 		blockidx = 0
 		last_block = len(self.root.v) - 1
 
@@ -118,7 +127,7 @@ class PDTableMeta(object):
 		while blockidx <= last_block:
 			ent = self.root.v[blockidx]
 
-			# accumulate keys belonging to this block
+			# accumulate new records belonging to this block
 			add_recs = []
 			while (keyidx < len(keys) and
 			       ((keys[keyidx] <= ent.key) or
@@ -128,9 +137,17 @@ class PDTableMeta(object):
 				add_recs.append(tup)
 				keyidx += 1
 
+			# accumulate record deletions belonging to this block
+			del_recs = []
+			while (del_keyidx < len(del_keys) and
+			       (del_keys[del_keyidx] <= ent.key)):
+				del_recs.append(del_keys[del_keyidx])
+				del_keyidx += 1
+
 			# update block, or split into multiple blocks
-			if len(add_recs) > 0:
-				entlist = self.checkpoint_block(ent, add_recs)
+			if len(add_recs) > 0 or len(del_recs) > 0:
+				entlist = self.checkpoint_block(ent,
+							add_recs, del_recs)
 				if entlist is None:
 					return False
 
@@ -555,6 +572,8 @@ class PageDb(object):
 		if not self.super.dump():
 			return False
 
+		# if we succeeded in switching to the newly committed
+		# data, flush cached log data just written to storage
 		for tablemeta in self.super.tables.itervalues():
 			tablemeta.checkpoint_flush()
 
