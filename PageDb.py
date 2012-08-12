@@ -568,13 +568,29 @@ class PageDb(object):
 			if not tablemeta.checkpoint():
 				return False
 
+		# alloc new log id, open new log
+		new_log_id = self.super.new_fileid()
+		new_logger = RecLogger(self.dbdir, new_log_id)
+		if not self.logger.open():
+			self.super.garbage_fileids.append(new_log_id)
+			return False
+
+		# swap in new log id into superblock, write superblock
+		old_log_id = self.super.log_id
+		self.super.log_id = new_log_id
 		if not self.super.dump():
+			self.super.log_id = old_log_id
+			self.super.garbage_fileids.append(new_log_id)
 			return False
 
 		# if we succeeded in switching to the newly committed
 		# data, flush cached log data just written to storage
 		for tablemeta in self.super.tables.itervalues():
 			tablemeta.checkpoint_flush()
+
+		# overwrite old logger, closing old log file
+		self.super.garbage_fileids.append(old_log_id)
+		self.logger = new_logger
 
 		# TODO: delete super.garbage_fileids
 
