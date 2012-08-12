@@ -23,14 +23,14 @@ from util import trywrite, isstr, readrecstr, writerecstr
 
 
 class PDTableMeta(object):
-	def __init__(self):
+	def __init__(self, super):
 		# serialized
 		self.name = ''
 		self.uuid = uuid.uuid4()
 		self.root_id = -1
 
 		# only used at runtime
-		self.super = None
+		self.super = super
 		self.root = None
 		self.log_cache = {}
 		self.log_del_cache = set()
@@ -259,8 +259,7 @@ class PDSuper(object):
 			return False
 
 		for tm in obj.tables:
-			tablemeta = PDTableMeta()
-			tablemeta.super = self
+			tablemeta = PDTableMeta(self)
 			tablemeta.name = tm.name
 			tablemeta.root_id = tm.root_id
 
@@ -269,7 +268,7 @@ class PDSuper(object):
 			except ValueError:
 				return False
 
-			tables[tablemeta.name] = tablemeta
+			self.tables[tablemeta.name] = tablemeta
 
 		return True
 
@@ -280,9 +279,9 @@ class PDSuper(object):
 		obj.next_txn_id = self.next_txn_id
 		obj.next_file_id = self.next_file_id
 
-		for tablemeta in self.tables:
+		for tablemeta in self.tables.itervalues():
 			tm = obj.tables.add()
-			tm.name = tablemeta.name
+			tm.name = unicode(tablemeta.name)
 			tm.uuid = tablemeta.uuid.hex
 			tm.root_id = tablemeta.root_id
 
@@ -442,7 +441,7 @@ class PageDb(object):
 		if obj.tabname in self.super.tables:
 			return False
 
-		tablemeta = PDTableMeta()
+		tablemeta = PDTableMeta(self.super)
 		tablemeta.name = obj.tabname
 		tablemeta.root_id = obj.root_id
 		tablemeta.root = TableRoot(self.dbdir, tablemeta.root_id)
@@ -523,7 +522,7 @@ class PageDb(object):
 		if name in self.super.tables:
 			return False
 
-		tablemeta = PDTableMeta()
+		tablemeta = PDTableMeta(self.super)
 		tablemeta.name = name
 		tablemeta.root_id = self.super.new_fileid()
 		tablemeta.root = TableRoot(self.dbdir, tablemeta.root_id)

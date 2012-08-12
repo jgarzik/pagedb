@@ -10,6 +10,9 @@ import struct
 import os
 import mmap
 
+import PDcodec_pb2
+from util import trywrite, updcrc
+
 
 MIN_BLK_SZ = 1024
 TARGET_MIN_BLK_SZ = 2 * 1024 * 1024
@@ -105,7 +108,7 @@ class Block(object):
 	def create(self):
 		try:
 			name = "%x" % (self.file_id,)
-			self.fd = os.open(dbdir + '/' + name,
+			self.fd = os.open(self.dbdir + '/' + name,
 					  os.O_CREAT | os.O_EXCL | os.O_WRONLY)
 		except OSError:
 			return False
@@ -266,22 +269,22 @@ class BlockWriter(object):
 			return False
 		self.block.close()
 
-		self.block = None
-		self.recs = []
-		self.rec_bytes = 0
-
 		rootent = PDcodec_pb2.RootEnt()
 		rootent.key = last_key
 		rootent.file_id = self.block.file_id
 
 		self.root_v.append(rootent)
 
+		self.block = None
+		self.recs = []
+		self.rec_bytes = 0
+
 		return True
 
 	def push(self, key, value):
 		if self.block is None:
-			self.block = Block.Block(self.super.dbdir,
-						 self.super.new_fileid())
+			self.block = Block(self.super.dbdir,
+					   self.super.new_fileid())
 			if not self.block.create():
 				return False
 
@@ -289,7 +292,7 @@ class BlockWriter(object):
 		self.recs.append(tup)
 		self.rec_bytes += len(key) + len(value)
 
-		if self.rec_bytes > Block.TARGET_MIN_BLK_SZ:
+		if self.rec_bytes > TARGET_MIN_BLK_SZ:
 			return self.flush()
 		return True
 
