@@ -81,8 +81,8 @@ class Block(object):
 	def open(self):
 		# open and mmap file
 		try:
-			name = "%x" % (self.file_id,)
-			self.fd = os.open(dbdir + '/' + name, os.O_RDONLY)
+			name = "/block.%x" % (self.file_id,)
+			self.fd = os.open(dbdir + name, os.O_RDONLY)
 			self.st = os.fstat(self.fd)
 			if (self.st.st_size < MIN_BLK_SZ or
 			    self.st.st_size > MAX_BLK_SZ):
@@ -107,8 +107,8 @@ class Block(object):
 
 	def create(self):
 		try:
-			name = "%x" % (self.file_id,)
-			self.fd = os.open(self.dbdir + '/' + name,
+			name = "/block.%x" % (self.file_id,)
+			self.fd = os.open(self.dbdir + name,
 					  os.O_CREAT | os.O_EXCL | os.O_WRONLY)
 		except OSError:
 			return False
