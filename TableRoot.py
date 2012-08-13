@@ -11,7 +11,7 @@ import zlib
 import os
 
 import PDcodec_pb2
-from util import readrec, writepb
+from util import readrec, writepb, tryread, trywrite
 
 
 class TableRoot(object):
@@ -51,6 +51,10 @@ class TableRoot(object):
 		return True
 
 	def deserialize(self, fd):
+		hdr = tryread(fd, 8)
+		if hdr != 'TABLROOT':
+			return False
+
 		tup = readrec(fd)
 		if tup is None:
 			return False
@@ -78,7 +82,8 @@ class TableRoot(object):
 			rootent.key = ent.key
 			rootent.file_id = ent.file_id
 
-		if not writepb(fd, 'ROOT', rootidx):
+		if (not trywrite(fd, 'TABLROOT') or
+		    not writepb(fd, 'ROOT', rootidx)):
 			return False
 
 		return True

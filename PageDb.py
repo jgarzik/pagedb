@@ -230,7 +230,11 @@ class PDSuper(object):
 		return True
 
 	def deserialize(self, s):
-		tup = readrecstr(s)
+		hdr = s[:8]
+		if hdr != 'SUPER   ':
+			return False
+
+		tup = readrecstr(s[8:])
 		if tup is None:
 			return False
 		recname = tup[0]
@@ -285,7 +289,8 @@ class PDSuper(object):
 			tm.uuid = tablemeta.uuid.hex
 			tm.root_id = tablemeta.root_id
 
-		r = writerecstr('SUPR', obj.SerializeToString())
+		r = 'SUPER   '
+		r += writerecstr('SUPR', obj.SerializeToString())
 
 		return r
 
