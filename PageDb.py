@@ -46,6 +46,8 @@ class PDTableMeta(object):
 			self.root.root_id = old_root_id
 			return False
 
+		self.root_id = self.root.root_id
+
 		self.super.garbage_fileids.append(old_root_id)
 
 		return True

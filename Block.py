@@ -11,7 +11,7 @@ import os
 import mmap
 
 import PDcodec_pb2
-from util import trywrite, updcrc, writerecstr
+from util import trywrite, updcrc, readrecstr, writerecstr
 
 
 MIN_BLK_SZ = 1024
@@ -83,10 +83,9 @@ class Block(object):
 		# open and mmap file
 		try:
 			name = "/block.%x" % (self.file_id,)
-			self.fd = os.open(dbdir + name, os.O_RDONLY)
+			self.fd = os.open(self.dbdir + name, os.O_RDONLY)
 			self.st = os.fstat(self.fd)
-			if (self.st.st_size < MIN_BLK_SZ or
-			    self.st.st_size > MAX_BLK_SZ):
+			if (self.st.st_size > MAX_BLK_SZ):
 				return False
 			self.map = mmap.mmap(self.fd, 0, mmap.MAP_SHARED,
 					     mmap.PROT_READ)
