@@ -98,8 +98,12 @@ class Block(object):
 			return False
 
 		# unpack and validate trailer
-		trailer = self.map[-12:-4]
-		self.arrpos, self.n_keys = struct.unpack('<II', trailer)
+		tup = readrecstr(self.map[-((4 * 5) + 4):-4])
+		if tup is None:
+			return False
+		if tup[0] != 'DTRL':
+			return False
+		self.arrpos, self.n_keys = struct.unpack('<II', tup[1])
 
 		if self.st.st_size < (self.arrpos + (self.n_keys * 8)):
 			return False
@@ -216,25 +220,28 @@ class Block(object):
 
 			idxs.append(blkidx)
 
-		arrpos = pos
+		arrpos = pos + 8
 
 		# section 3: write fixed-length key index in sorted order
+		arrdata = []
 		for idx in idxs:
-			data = idx.serialize()
+			arrdata.append(idx.serialize())
 
-			if not trywrite(self.fd, data):
-				return None
-
-			crc = updcrc(data, crc)
-
-		# section 4: data trailer
-		data = struct.pack('<II', arrpos, len(vals))
-		if not trywrite(self.fd, data):
+		rec_data = writerecstr('DIDX', ''.join(arrdata))
+		if not trywrite(self.fd, rec_data):
 			return None
 
-		crc = updcrc(data, crc)
+		crc = updcrc(rec_data, crc)
 
-		# section 5: CRC trailer
+		# section 4: data trailer
+		raw_data = struct.pack('<II', arrpos, len(vals))
+		rec_data = writerecstr('DTRL', raw_data)
+		if not trywrite(self.fd, rec_data):
+			return None
+
+		crc = updcrc(rec_data, crc)
+
+		# section 5: whole-file CRC trailer
 		data = struct.pack('<I', crc)
 		if not trywrite(self.fd, data):
 			return None

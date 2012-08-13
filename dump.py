@@ -7,6 +7,17 @@ import TableRoot, PageDb, PDcodec_pb2
 from util import tryread, readrec
 
 
+def dblock(fd):
+	while True:
+		tup = readrec(fd)
+		if tup is None:
+			return True
+
+		recname = tup[0]
+		data = tup[1]
+
+		print recname
+
 def dsuper(fd):
 	tup = readrec(fd)
 	if tup is None:
