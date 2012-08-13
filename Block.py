@@ -11,7 +11,7 @@ import os
 import mmap
 
 import PDcodec_pb2
-from util import trywrite, updcrc
+from util import trywrite, updcrc, writerecstr
 
 
 MIN_BLK_SZ = 1024
@@ -37,16 +37,17 @@ class BlockIdx(object):
 class BlockEnt(object):
 	def __init__(self):
 		self.k = ''
-		self.v_pos = -1
-		self.v_len = 0
+		self.v = ''
+		self.v_len = None
 		self.k_len = None
 
 	def deserialize_hdr(self, s):
-		(self.k_len, self.v_pos, self.v_len) = struct.unpack('<III', s)
+		(self.k_len, self.v_len) = struct.unpack('<II', s)
 
 	def serialize(self):
-		r = struct.pack('<III', len(self.k), self.v_pos, self.v_len)
+		r = struct.pack('<II', len(self.k), len(self.v))
 		r += self.k
+		r += self.v
 		return r
 
 
@@ -92,7 +93,7 @@ class Block(object):
 		except OSError:
 			return False
 
-		# verify magic number
+		# verify magic number header
 		if self.map[:8] != 'BLOCK   ':
 			return False
 
@@ -141,28 +142,28 @@ class Block(object):
 				return None
 
 			# test key against search key
-			keypos = blkidx.entpos + (4 * 3)
+			keypos = blkidx.entpos + (4 * 2)
 			test_key = self.map[keypos : keypos + blkidx.k_len]
 			if k == test_key:
-				return self.read_ent(blkidx, k)
+				return self.read_entkey(blkidx, k)
 			if k < test_key:
 				return None
 
 		return None
 
-	def read_ent(self, blkidx, k=None):
+	def read_entkey(self, blkidx, k=None):
 		blkent = BlockEnt()
 		blkent.deserialize_hdr(self.map[blkidx.entpos :
-						blkidx.entpos + (4 * 3)])
+						blkidx.entpos + (4 * 2)])
 		if k is None:
-			kpos = blkidx.entpos + (4 * 3)
+			kpos = blkidx.entpos + (4 * 2)
 			blkent.k = self.map[kpos : kpos + self.k_len]
 		else:
 			blkent.k = k
 		return blkent
 
-	def read_value(self, blkent):
-		spos = blkent.v_pos
+	def read_value(self, blkidx, blkent):
+		spos = blkidx.entpos + (4 * 2) + blkent.k_len
 		epos = spos + blkent.v_len
 		if epos > self.st.st_size:
 			return None
@@ -173,8 +174,8 @@ class Block(object):
 		ret_data = []
 		for idx in xrange(self.n_keys):
 			blkidx = self.getblkidx(idx)
-			blkent = self.read_ent(blkidx)
-			value = self.read_value(blkent)
+			blkent = self.read_entkey(blkidx)
+			value = self.read_value(blkidx, blkent)
 
 			tup = (blkent.k, value)
 
@@ -183,7 +184,6 @@ class Block(object):
 		return ret_data
 
 	def write_values(self, vals):
-		ents = []
 		idxs = []
 
 		# section 1: header
@@ -193,43 +193,32 @@ class Block(object):
 		pos = len(hdr)
 		crc = updcrc(hdr, 0)
 
-		# section 2: write values in sorted order
+		# section 2: write key/value pairs in sorted order
 		for tup in vals:
 			key = tup[0]
 			val = tup[1]
 
 			blkent = BlockEnt()
 			blkent.k = key
-			blkent.v_pos = pos
-			blkent.v_len = len(val)
+			blkent.v = val
 
-			if not trywrite(self.fd, val):
-				return None
-
-			pos += blkent.v_len
-			crc = updcrc(val, crc)
-
-			ents.append(blkent)
-
-		# section 3: write keys in sorted order
-		for ent in ents:
 			blkidx = BlockIdx()
 			blkidx.entpos = pos
-			blkidx.k_len = len(ent.k)
+			blkidx.k_len = len(blkent.k)
 
-			data = ent.serialize()
+			rec_data = writerecstr('DATA', blkent.serialize())
 
-			if not trywrite(self.fd, data):
+			if not trywrite(self.fd, rec_data):
 				return None
 
-			pos += len(data)
-			crc = updcrc(data, crc)
+			pos += len(rec_data)
+			crc = updcrc(rec_data, crc)
 
 			idxs.append(blkidx)
 
 		arrpos = pos
 
-		# section 4: write fixed-length key index in sorted order
+		# section 3: write fixed-length key index in sorted order
 		for idx in idxs:
 			data = idx.serialize()
 
@@ -238,14 +227,14 @@ class Block(object):
 
 			crc = updcrc(data, crc)
 
-		# section 5: data trailer
+		# section 4: data trailer
 		data = struct.pack('<II', arrpos, len(vals))
 		if not trywrite(self.fd, data):
 			return None
 
 		crc = updcrc(data, crc)
 
-		# section 6: CRC trailer
+		# section 5: CRC trailer
 		data = struct.pack('<I', crc)
 		if not trywrite(self.fd, data):
 			return None
