@@ -18,7 +18,7 @@ import uuid
 from TableRoot import TableRoot
 import Block
 import PDcodec_pb2
-from RecLogger import RecLogger, LOGR_DELETE, LOGR_ID_DATA, LOGR_ID_TABLE
+import RecLogger
 from util import trywrite, isstr, readrecstr, writerecstr
 
 
@@ -295,6 +295,12 @@ class PDSuper(object):
 		self.dirty = True
 		return rv
 
+	def new_txnid(self):
+		rv = self.next_txn_id
+		self.next_txn_id += 1
+		self.dirty = True
+		return rv
+
 
 class PageTxn(object):
 	def __init__(self, id):
@@ -304,7 +310,7 @@ class PageTxn(object):
 	def get(self, k):
 		for dr in reversed(self.log):
 			if dr.key == k:
-				if dr.recmask & LOGR_DELETE:
+				if dr.recmask & RecLogger.LOGR_DELETE:
 					return None
 				return dr.v
 		return None
@@ -312,7 +318,7 @@ class PageTxn(object):
 	def exists(self, k):
 		for dr in reversed(self.log):
 			if dr.key == k:
-				if dr.recmask & LOGR_DELETE:
+				if dr.recmask & RecLogger.LOGR_DELETE:
 					return False
 				return True
 		return False
@@ -407,7 +413,7 @@ class PageDb(object):
 		if not self.read_logs():
 			return False
 
-		self.logger = RecLogger(dbdir, self.super.log_id)
+		self.logger = RecLogger.RecLogger(dbdir, self.super.log_id)
 		if not self.logger.open():
 			return False
 
@@ -421,7 +427,7 @@ class PageDb(object):
 		except KeyError:
 			return False
 
-		if obj.recmask & LOGR_DELETE:
+		if obj.recmask & RecLogger.LOGR_DELETE:
 			tablemeta.log_del_cache.add(obj.key)
 			try:
 				del tablemeta.log_cache[obj.key]
@@ -435,7 +441,7 @@ class PageDb(object):
 
 	def read_logtable(self, obj):
 		# TODO: logged table deletion unsupported
-		if obj.recmask & LOGR_DELETE:
+		if obj.recmask & RecLogger.LOGR_DELETE:
 			return False
 
 		if obj.tabname in self.super.tables:
@@ -451,6 +457,16 @@ class PageDb(object):
 
 		return True
 
+	def read_superop(self, obj):
+		if obj.op == PDcodec_pb2.LogSuperOp.INC_TXN:
+			self.super.next_txn_id += 1
+		elif obj.op == PDcodec_pb2.LogSuperOp.INC_FILE:
+			self.super.next_file_id += 1
+		else:
+			return False
+		self.super.dirty = True
+		return True
+
 	def read_log(self, logger):
 		while True:
 			tup = logger.read()
@@ -460,18 +476,22 @@ class PageDb(object):
 			recname = tup[0]
 			obj = tup[1]
 
-			if recname == LOGR_ID_DATA:
+			if recname == RecLogger.LOGR_ID_DATA:
 				if not self.read_logdata(obj):
 					return False
 
-			elif recname == LOGR_ID_TABLE:
+			elif recname == RecLogger.LOGR_ID_TABLE:
 				if not self.read_logtable(obj):
+					return False
+
+			elif recname == RecLogger.LOGR_ID_SUPER:
+				if not self.read_superop(obj):
 					return False
 
 	def read_logs(self):
 		log_id = self.super.log_id
 		while True:
-			logger = RecLogger(self.dbdir, log_id)
+			logger = RecLogger.RecLogger(self.dbdir, log_id)
 			if not logger.open(True):
 				if log_id == self.super.log_id:
 					return False
@@ -492,7 +512,7 @@ class PageDb(object):
 		if not self.super.dump():
 			return False
 
-		self.logger = RecLogger(dbdir, self.super.log_id)
+		self.logger = RecLogger.RecLogger(dbdir, self.super.log_id)
 		if not self.logger.open():
 			return False
 
@@ -529,6 +549,9 @@ class PageDb(object):
 		if not tablemeta.root.dump():
 			return False
 
+		if not self.logger.superop(self.super,
+					   PDcodec_pb2.LogSuperOp.INC_FILE):
+			return None
 		if not self.logger.tableop(tablemeta, None):
 			return None
 
@@ -538,11 +561,12 @@ class PageDb(object):
 		return True
 
 	def txn_begin(self):
-		txn = PageTxn(self.super.next_txn_id)
+		if not self.logger.superop(self.super,
+					   PDcodec_pb2.LogSuperOp.INC_TXN):
+			return None
+		txn = PageTxn(self.super.new_txnid())
 		if not self.logger.txn_begin(txn):
 			return None
-		self.super.next_txn_id += 1
-		self.super.dirty = True
 
 		return txn
 
@@ -570,7 +594,7 @@ class PageDb(object):
 
 		# alloc new log id, open new log
 		new_log_id = self.super.new_fileid()
-		new_logger = RecLogger(self.dbdir, new_log_id)
+		new_logger = RecLogger.RecLogger(self.dbdir, new_log_id)
 		if not self.logger.open():
 			self.super.garbage_fileids.append(new_log_id)
 			return False

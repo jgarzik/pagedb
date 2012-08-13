@@ -20,6 +20,14 @@ message LogTable {
 	required uint64 root_id = 4;
 }
 
+message LogSuperOp {
+	enum OpType {
+		INC_TXN = 0;
+		INC_FILE = 1;
+	}
+	required OpType op = 1;
+}
+
 message RootEnt {
 	required bytes key = 1;
 	required uint64 file_id = 2;

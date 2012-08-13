@@ -33,7 +33,7 @@ def prep():
 	shutil.rmtree(DBDIR)
 	os.mkdir(DBDIR)
 
-def test1():
+def test1(test_iter):
 	db = PageDb.PageDb()
 	if not db.create(DBDIR):
 		print "create failed"
@@ -106,9 +106,9 @@ def test1():
 		if ok:
 			print "neverexisted key exists for:", k
 
-	print "test1 OK"
+	print "test%d OK" % (test_iter,)
 
-def test2():
+def test2(test_iter):
 	db = PageDb.PageDb()
 	if not db.open(DBDIR):
 		print "open failed"
@@ -147,11 +147,25 @@ def test2():
 		if ok:
 			print "neverexisted key exists for:", k
 
-	print "test2 OK"
+	print "test%d OK" % (test_iter,)
+
+def test3(test_iter):
+	db = PageDb.PageDb()
+	if not db.open(DBDIR):
+		print "open failed"
+		sys.exit(1)
+
+	if not db.checkpoint():
+		print "checkpoint failed"
+		sys.exit(1)
+
+	print "test%d OK" % (test_iter,)
 
 prep()
-test1()
-test2()
+test1(1)
+test2(2)
+test3(3)
+test2(4)
 
 sys.exit(0)
 

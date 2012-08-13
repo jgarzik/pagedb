@@ -20,6 +20,7 @@ LOGR_ID_TXN_START = 'TXN '
 LOGR_ID_TXN_COMMIT = 'TXNC'
 LOGR_ID_TXN_ABORT = 'TXNA'
 LOGR_ID_TABLE = 'LTBL'
+LOGR_ID_SUPER = 'SUPR'
 LOGR_DELETE = (1 << 0)
 
 
@@ -72,6 +73,15 @@ class RecLogger(object):
 			return False
 		return True
 
+	def superop(self, super, op):
+		sr = PDcodec_pb2.LogSuperOp()
+		sr.op = op
+
+		if not writepb(self.fd, LOGR_ID_SUPER, sr):
+			return False
+
+		return True
+
 	def tableop(self, tablemeta, txn, delete=False):
 		tr = PDcodec_pb2.LogTable()
 		tr.tabname = tablemeta.name
@@ -85,9 +95,9 @@ class RecLogger(object):
 		tr.root_id = tablemeta.root_id
 
 		if not writepb(self.fd, LOGR_ID_TABLE, tr):
-			return None
+			return False
 
-		return tr
+		return True
 
 	def data(self, tablemeta, txn, k, v, delete=False):
 		dr = PDcodec_pb2.LogData()
@@ -149,8 +159,11 @@ class RecLogger(object):
 		elif recname == LOGR_ID_TABLE:
 			obj = PDcodec_pb2.LogTable()
 
+		elif recname == LOGR_ID_SUPER:
+			obj = PDcodec_pb2.LogSuperOp()
+
 		else:
-			return None
+			raise RuntimeError
 
 		try:
 			obj.ParseFromString(data)
