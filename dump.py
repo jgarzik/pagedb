@@ -2,13 +2,15 @@
 
 import os
 import sys
+import struct
 
-import TableRoot, PageDb, PDcodec_pb2
+import TableRoot, PageDb, PDcodec_pb2, Block
 from util import tryread, readrec
 
 
 def dblock(fd):
 	while True:
+		fpos = os.lseek(fd, 0, os.SEEK_CUR)
 		tup = readrec(fd)
 		if tup is None:
 			return True
@@ -16,7 +18,40 @@ def dblock(fd):
 		recname = tup[0]
 		data = tup[1]
 
-		print recname
+		recstr = "%s(%d)" % (recname, fpos)
+
+		if recname == 'DATA':
+			hdr = data[:8]
+			data = data[8:]
+
+			blkent = Block.BlockEnt()
+			blkent.deserialize_hdr(hdr)
+
+			fmt = "%ds%ds" % (blkent.k_len, blkent.v_len)
+			(blkent.k, blkent.v) = struct.unpack(fmt, data)
+
+			print recstr, blkent.k_len, blkent.v_len
+			print blkent.k
+			print blkent.v, "\n"
+
+		elif recname == 'DTRL':
+			(arrpos, n_vals) = struct.unpack('<II', data)
+			print recstr, arrpos, n_vals
+
+		elif recname == 'DIDX':
+			print recstr
+			while len(data) >= 8:
+				rec = data[:8]
+				data = data[8:]
+				(entpos, k_len) = struct.unpack('<II', rec)
+				print entpos, k_len
+			if len(data) > 0:
+				print len(data), "bytes trailing"
+			print ""
+
+		else:
+			print recstr
+
 
 def dsuper(fd):
 	tup = readrec(fd)
