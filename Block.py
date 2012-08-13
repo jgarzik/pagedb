@@ -130,7 +130,7 @@ class Block(object):
 		blkidx.deserialize(self.map[pos:pos+8])
 
 		# validate index entry
-		if blkidx.entpos + (4 * 3) + blkidx.k_len > self.st.st_size:
+		if blkidx.entpos + (4 * 2) + blkidx.k_len > self.st.st_size:
 			return None
 
 		return blkidx
@@ -148,39 +148,38 @@ class Block(object):
 			keypos = blkidx.entpos + (4 * 2)
 			test_key = self.map[keypos : keypos + blkidx.k_len]
 			if k == test_key:
-				return self.read_entkey(blkidx, k)
+				return blkidx
 			if k < test_key:
 				return None
 
 		return None
 
-	def read_entkey(self, blkidx, k=None):
+	def read_record(self, blkidx):
 		blkent = BlockEnt()
 		blkent.deserialize_hdr(self.map[blkidx.entpos :
 						blkidx.entpos + (4 * 2)])
-		if k is None:
-			kpos = blkidx.entpos + (4 * 2)
-			blkent.k = self.map[kpos : kpos + self.k_len]
-		else:
-			blkent.k = k
+
+		fmt = "%ds%ds" % (blkent.k_len, blkent.v_len)
+		(blkent.k, blkent.v) = struct.unpack(fmt, data)
+
 		return blkent
 
-	def read_value(self, blkidx, blkent):
-		spos = blkidx.entpos + (4 * 2) + blkent.k_len
-		epos = spos + blkent.v_len
-		if epos > self.st.st_size:
-			return None
+	def read_value(self, blkidx):
+		blkent = BlockEnt()
+		blkent.deserialize_hdr(self.map[blkidx.entpos :
+						blkidx.entpos + (4 * 2)])
 
-		return self.map[spos:epos]
+		v_pos = blkidx.entpos + (4 * 2) + blkent.k_len
+
+		return self.map[v_pos : v_pos + blkent.v_len]
 
 	def readall(self):
 		ret_data = []
 		for idx in xrange(self.n_keys):
 			blkidx = self.getblkidx(idx)
-			blkent = self.read_entkey(blkidx)
-			value = self.read_value(blkidx, blkent)
+			blkent = self.read_record(blkidx)
 
-			tup = (blkent.k, value)
+			tup = (blkent.k, blkent.v)
 
 			ret_data.append(tup)
 
@@ -206,7 +205,7 @@ class Block(object):
 			blkent.v = val
 
 			blkidx = BlockIdx()
-			blkidx.entpos = pos
+			blkidx.entpos = pos + 8
 			blkidx.k_len = len(blkent.k)
 
 			rec_data = writerecstr('DATA', blkent.serialize())
