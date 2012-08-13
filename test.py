@@ -106,7 +106,7 @@ def test1(test_iter):
 		if ok:
 			print "neverexisted key exists for:", k
 
-	print "test%d OK" % (test_iter,)
+	print "test%d ok" % (test_iter,)
 
 def test2(test_iter):
 	db = PageDb.PageDb()
@@ -119,35 +119,47 @@ def test2(test_iter):
 		print "open table failed"
 		sys.exit(1)
 
+	fail = False
+
 	for k, v in datadict.iteritems():
 		dbv = table.get(None, k)
 		if k in deleted_keys:
 			if dbv is not None:
 				print "key still get's for:", k
+				fail = True
 		else:
 			if v != dbv:
 				print "key mismatch for:", k
+				fail = True
 
 	for k in datadict.iterkeys():
 		ok = table.exists(None, k)
 		if k in deleted_keys:
 			if ok:
 				print "key still exists for:", k
+				fail = True
 		else:
 			if not ok:
 				print "key not found for:", k
+				fail = True
 
 	for k in never_existed:
 		dbv = table.get(None, k)
 		if dbv is not None:
 			print "neverexisted key get's for:", k
+			fail = True
 
 	for k in never_existed:
 		ok = table.exists(None, k)
 		if ok:
 			print "neverexisted key exists for:", k
+			fail = True
 
-	print "test%d OK" % (test_iter,)
+	if fail:
+		result = 'FAILED'
+	else:
+		result = 'ok'
+	print "test%d %s" % (test_iter, result)
 
 def test3(test_iter):
 	db = PageDb.PageDb()
@@ -159,7 +171,7 @@ def test3(test_iter):
 		print "checkpoint failed"
 		sys.exit(1)
 
-	print "test%d OK" % (test_iter,)
+	print "test%d ok" % (test_iter,)
 
 prep()
 test1(1)

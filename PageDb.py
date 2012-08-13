@@ -236,7 +236,7 @@ class PDSuper(object):
 		recname = tup[0]
 		data = tup[1]
 
-		if recname != 'PGDB':
+		if recname != 'SUPR':
 			return False
 
 		obj = PDcodec_pb2.Superblock()
@@ -285,7 +285,7 @@ class PDSuper(object):
 			tm.uuid = tablemeta.uuid.hex
 			tm.root_id = tablemeta.root_id
 
-		r = writerecstr('PGDB', obj.SerializeToString())
+		r = writerecstr('SUPR', obj.SerializeToString())
 
 		return r
 
@@ -595,7 +595,7 @@ class PageDb(object):
 		# alloc new log id, open new log
 		new_log_id = self.super.new_fileid()
 		new_logger = RecLogger.RecLogger(self.dbdir, new_log_id)
-		if not self.logger.open():
+		if not new_logger.open():
 			self.super.garbage_fileids.append(new_log_id)
 			return False
 
