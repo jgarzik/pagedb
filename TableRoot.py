@@ -7,7 +7,6 @@
 #
 
 import struct
-import zlib
 import os
 
 import PDcodec_pb2

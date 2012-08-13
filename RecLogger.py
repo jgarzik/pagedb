@@ -8,7 +8,6 @@
 
 import os
 import struct
-import zlib
 import google.protobuf
 
 import PDcodec_pb2

@@ -7,7 +7,6 @@
 #
 
 import struct
-import zlib
 import json
 import re
 import os
