@@ -15,8 +15,7 @@ from util import trywrite, updcrc, readrecstr, writerecstr
 
 
 MIN_BLK_SZ = 1024
-TARGET_MIN_BLK_SZ = 2 * 1024 * 1024
-TARGET_MAX_BLK_SZ = 8 * 1024 * 1024
+TARGET_BLK_SZ = 4 * 1024 * 1024
 MAX_BLK_SZ = 16 * 1024 * 1024
 
 
@@ -286,7 +285,7 @@ class BlockWriter(object):
 		self.recs.append(tup)
 		self.rec_bytes += len(key) + len(value)
 
-		if self.rec_bytes > TARGET_MIN_BLK_SZ:
+		if self.rec_bytes > TARGET_BLK_SZ:
 			return self.flush()
 		return True
 
