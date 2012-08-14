@@ -1,11 +1,66 @@
 
+Overview
+-------------------------------------
 All files have an 8-byte header string (magic number), for identification.
 
 All files are packetized in a simple format; sometimes a CRC32 trailer will
 fall outside the packetized format.
 
 	4-byte string, indicating the type of message
-	32-bit int, indicating data length
+	32-bit little endian int, indicating data length
 	<data>
-	32-bit int, a CRC32 checksum of header+<data>
+	32-bit little endian int, a CRC32 checksum of header+<data>
+
+
+Block data files
+-------------------------------------
+1. 8-byte magic number 'BLOCK   '
+
+2. 'DATA' records:
+	length of key, 32-bit LE
+	length of value, 32-bit LE
+	key
+	value
+
+3. 'DIDX' record, an array of fixed-length records:
+	file position of 'DATA' record, 32-bit LE
+	length of key, 32-bit LE
+
+4. 'DTRL' record,
+	file position of first record inside DIDX, 32-bit LE
+	DIDX array element count, 32-bit LE
+
+5. whole-file CRC32 trailer, 32-bit LE
+
+
+Root index/table
+-------------------------------------
+1. 8-byte magic number 'TABLROOT'
+2. 'ROOT' record, containing Google Protocol Buffer-serialized data.
+   See RootEnt and RootIdx in PDcodec.proto.
+
+
+
+Log files
+-------------------------------------
+1. 8-byte magic number 'LOGGER  '
+2. Series of records, disambiguated by their 4-byte record name from
+   Google Protocol Buffer-serialized data.
+
+	Rec.Name	Protocol Buffer object
+	--------------	----------------------
+	LOGR		LogData
+	TXN		LogTxnOp
+	TXNC		LogTxnOp
+	TXNA		LogTxnOp
+	LTBL		LogTable
+	LSPR		LogSuperOp
+
+
+
+Superblock
+-------------------------------------
+1. 8-byte magic number 'SUPER   '
+2. 'SUPR' record, containing Google Protocol Buffer-serialized data.
+   See Superblock in PDcodec.proto.
 
