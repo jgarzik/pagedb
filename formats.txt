@@ -1,0 +1,11 @@
+
+All files have an 8-byte header string (magic number), for identification.
+
+All files are packetized in a simple format; sometimes a CRC32 trailer will
+fall outside the packetized format.
+
+	4-byte string, indicating the type of message
+	32-bit int, indicating data length
+	<data>
+	32-bit int, a CRC32 checksum of header+<data>
+
