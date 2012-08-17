@@ -9,6 +9,7 @@
 import struct
 import os
 import mmap
+import random
 
 import PDcodec_pb2
 from util import trywrite, updcrc, readrecstr, writerecstr
@@ -294,10 +295,15 @@ class BlockManager(object):
 	def __init__(self, dbdir):
 		self.dbdir = dbdir
 		self.cache = {}
+		self.size_max = 100
 
 	def get(self, file_id):
 		if file_id in self.cache:
-			return self.cache[file_id]
+			block = self.cache[file_id]
+			return block
+
+		if len(self.cache) >= self.size_max:
+			self.shrink_cache()
 
 		block = Block(self.dbdir, file_id)
 		if not block.open():
@@ -306,4 +312,11 @@ class BlockManager(object):
 		self.cache[file_id] = block
 
 		return block
+
+	def shrink_cache(self):
+		keys = self.cache.keys()
+		random.shuffle(keys)
+		while len(self.cache) >= self.size_max:
+			key = keys.pop()
+			del self.cache[key]
 
