@@ -427,7 +427,7 @@ class PageDb(object):
 
 		return True
 
-	def read_logdata(self, obj):
+	def apply_logdata(self, obj):
 		try:
 			tablemeta = self.super.tables[obj.table]
 		except KeyError:
@@ -473,7 +473,47 @@ class PageDb(object):
 		self.super.dirty = True
 		return True
 
+	def read_logtxn_start(self, txns, obj):
+		if obj.txn_id in txns:
+			return False
+
+		txn = PageTxn(obj.txn_id)
+		txns[obj.txn_id] = txn
+
+		return True
+
+	def read_logtxn_abort(self, txns, obj):
+		if obj.txn_id not in txns:
+			return False
+
+		del txns[obj.txn_id]
+
+		return True
+
+	def read_logtxn_commit(self, txns, obj):
+		if obj.txn_id not in txns:
+			return False
+
+		txn = txns[obj.txn_id]
+		del txns[obj.txn_id]
+
+		for dr in txn.log:
+			if not self.apply_logdata(dr):
+				return False
+
+		return True
+
+	def read_logdata(self, txns, obj):
+		if obj.txn_id not in txns:
+			return False
+
+		txn = txns[obj.txn_id]
+		txn.log.append(obj)
+
+		return True
+
 	def read_log(self, logger):
+		txns = {}
 		while True:
 			tup = logger.read()
 			if tup is None:
@@ -482,8 +522,20 @@ class PageDb(object):
 			recname = tup[0]
 			obj = tup[1]
 
-			if recname == RecLogger.LOGR_ID_DATA:
-				if not self.read_logdata(obj):
+			if recname == RecLogger.LOGR_ID_TXN_START:
+				if not self.read_logtxn_start(txns, obj):
+					return False
+
+			elif recname == RecLogger.LOGR_ID_TXN_COMMIT:
+				if not self.read_logtxn_commit(txns, obj):
+					return False
+
+			elif recname == RecLogger.LOGR_ID_TXN_ABORT:
+				if not self.read_logtxn_abort(txns, obj):
+					return False
+
+			elif recname == RecLogger.LOGR_ID_DATA:
+				if not self.read_logdata(txns, obj):
 					return False
 
 			elif recname == RecLogger.LOGR_ID_TABLE:
@@ -583,7 +635,7 @@ class PageDb(object):
 			return False
 
 		for dr in txn.log:
-			if not self.read_logdata(dr):
+			if not self.apply_logdata(dr):
 				return False
 
 		return True
