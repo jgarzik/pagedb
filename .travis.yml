@@ -1,0 +1,21 @@
+
+language: python
+
+python:
+  - "2.7"
+  - "3.3"
+
+os:
+  - linux
+
+sudo: false
+
+addons:
+  apt:
+    packages:
+      - protobuf-compiler
+      - python-protobuf
+
+script:
+  - mkdir /tmp/dbdir && make && ./test.py
+
